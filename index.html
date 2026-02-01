@@ -1,0 +1,1599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>uextract – UE Audio Extractor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-deep: #1a1625;
+      --bg-panel: #221d2e;
+      --bg-card: #2d2640;
+      --bg-hover: #3a3250;
+      --border: #4a4060;
+      --border-active: #6a5a80;
+      --text: #f5f0ff;
+      --text-muted: #b8a8d0;
+      --text-dim: #8878a0;
+      --accent: #ff7eb3;
+      --accent-glow: rgba(255, 126, 179, 0.25);
+      --accent-secondary: #7c5cff;
+      --ue-blue: #00d4ff;
+      --ue-glow: rgba(0, 212, 255, 0.3);
+      --warning: #ffcc70;
+      --error: #ff7b7b;
+      --success: #7dffb3;
+      --audio-wave: #ff7eb3;
+      --font-mono: 'JetBrains Mono', monospace;
+      --font-sans: 'Nunito', system-ui, sans-serif;
+      --radius: 16px;
+      --radius-sm: 10px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    html, body {
+      height: 100%;
+      overflow: hidden;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg-deep);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    .header {
+      background: linear-gradient(180deg, var(--bg-panel) 0%, var(--bg-deep) 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex-shrink: 0;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .logo-icon {
+      width: 42px;
+      height: 42px;
+      background: linear-gradient(135deg, var(--ue-blue) 0%, #00a8cc 100%);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      box-shadow: 0 4px 20px var(--ue-glow), inset 0 1px 0 rgba(255,255,255,0.2);
+      animation: float 3s ease-in-out infinite;
+      position: relative;
+    }
+
+    .logo-icon::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, transparent 50%);
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-3px); }
+    }
+
+    .logo h1 {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: baseline;
+    }
+
+    .logo h1 .ue {
+      color: var(--ue-blue);
+      text-shadow: 0 0 20px var(--ue-glow), 0 0 40px var(--ue-glow);
+      font-weight: 800;
+    }
+
+    .logo h1 .xtract {
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .logo .subtitle {
+      color: var(--text-muted);
+      font-weight: 500;
+      font-size: 13px;
+      margin-left: 12px;
+      background: var(--bg-card);
+      padding: 4px 10px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+    }
+
+    .header-actions {
+      margin-left: auto;
+      display: flex;
+      gap: 10px;
+    }
+
+    /* Main layout */
+    .main {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* Sidebar - File tree */
+    .sidebar {
+      width: 320px;
+      background: var(--bg-panel);
+      border-right: 2px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    .sidebar-header {
+      padding: 18px;
+      border-bottom: 2px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: linear-gradient(180deg, var(--bg-hover) 0%, var(--bg-panel) 100%);
+    }
+
+    .sidebar-header h2 {
+      font-size: 14px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+    }
+
+    .file-count {
+      margin-left: auto;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--ue-blue);
+      background: rgba(0, 212, 255, 0.1);
+      padding: 4px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(0, 212, 255, 0.3);
+      font-weight: 600;
+    }
+
+    .tree-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 0;
+    }
+
+    .tree-container::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .tree-container::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .tree-container::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 4px;
+    }
+
+    .tree-item {
+      display: flex;
+      align-items: center;
+      padding: 8px 16px;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+      gap: 10px;
+      font-size: 14px;
+      border-radius: 0 12px 12px 0;
+      margin-right: 8px;
+    }
+
+    .tree-item:hover {
+      background: var(--bg-hover);
+      transform: translateX(4px);
+    }
+
+    .tree-item.selected {
+      background: linear-gradient(90deg, var(--accent-glow), rgba(124, 92, 255, 0.15));
+      border-right: 3px solid var(--accent);
+    }
+
+    .tree-item .icon {
+      width: 18px;
+      height: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+
+    .tree-item .icon.folder { color: var(--warning); }
+    .tree-item .icon.audio { color: var(--accent); }
+    .tree-item .icon.cue { color: var(--accent-secondary); }
+    .tree-item .icon.data { color: var(--text-dim); }
+
+    .tree-item .name {
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .tree-folder {
+      padding-left: 0;
+    }
+
+    .tree-folder-header {
+      display: flex;
+      align-items: center;
+      padding: 8px 16px;
+      cursor: pointer;
+      transition: background 0.15s ease;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .tree-folder-header:hover {
+      background: var(--bg-hover);
+    }
+
+    .tree-folder-header .chevron {
+      width: 16px;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: var(--text-muted);
+      transition: transform 0.2s ease;
+    }
+
+    .tree-folder-header.collapsed .chevron {
+      transform: rotate(-90deg);
+    }
+
+    .tree-folder-children {
+      padding-left: 16px;
+    }
+
+    .tree-folder-children.hidden {
+      display: none;
+    }
+
+    /* Content area */
+    .content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Dropzone */
+    .dropzone-wrapper {
+      padding: 24px;
+      flex-shrink: 0;
+    }
+
+    .dropzone {
+      border: 3px dashed var(--border);
+      border-radius: 20px;
+      padding: 50px 40px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+      background: linear-gradient(135deg, rgba(0, 212, 255, 0.03) 0%, rgba(255, 126, 179, 0.03) 100%);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .dropzone::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 30% 70%, var(--ue-glow) 0%, transparent 50%),
+                  radial-gradient(circle at 70% 30%, var(--accent-glow) 0%, transparent 50%);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .dropzone:hover::before {
+      opacity: 1;
+    }
+
+    .dropzone:hover {
+      border-color: var(--accent);
+      transform: scale(1.01);
+      box-shadow: 0 8px 40px rgba(255, 126, 179, 0.15);
+    }
+
+    .dropzone.dragover {
+      border-color: var(--ue-blue);
+      background: rgba(0, 212, 255, 0.08);
+      transform: scale(1.02);
+      box-shadow: 0 12px 50px var(--ue-glow);
+    }
+
+    .dropzone h3 {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      position: relative;
+    }
+
+    .dropzone-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+      display: block;
+      animation: bounce 2s ease-in-out infinite;
+    }
+
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-8px); }
+    }
+
+    .dropzone p {
+      color: var(--text-muted);
+      font-size: 15px;
+      position: relative;
+    }
+
+    .dropzone .hint {
+      margin-top: 20px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text-dim);
+      background: var(--bg-card);
+      padding: 10px 18px;
+      border-radius: 12px;
+      display: inline-block;
+      border: 1px solid var(--border);
+      position: relative;
+    }
+
+    /* Audio list */
+    .audio-list-wrapper {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 24px 24px;
+    }
+
+    .audio-list-wrapper::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .audio-list-wrapper::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .audio-list-wrapper::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 4px;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 18px;
+      padding-bottom: 14px;
+      border-bottom: 2px solid var(--border);
+    }
+
+    .section-header h2 {
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .section-header .badge {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      background: linear-gradient(135deg, var(--accent-glow), rgba(124, 92, 255, 0.2));
+      color: var(--accent);
+      padding: 6px 14px;
+      border-radius: 999px;
+      border: 1px solid var(--accent);
+      font-weight: 600;
+    }
+
+    .audio-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+      gap: 16px;
+    }
+
+    .audio-card {
+      background: var(--bg-card);
+      border: 2px solid var(--border);
+      border-radius: 18px;
+      padding: 18px;
+      transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .audio-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-4px) scale(1.01);
+      box-shadow: 0 12px 40px rgba(255, 126, 179, 0.2);
+    }
+
+    .audio-card.playing {
+      border-color: var(--ue-blue);
+      box-shadow: 0 0 30px var(--ue-glow), 0 8px 30px rgba(0, 0, 0, 0.3);
+      animation: playingPulse 2s ease-in-out infinite;
+    }
+
+    @keyframes playingPulse {
+      0%, 100% { box-shadow: 0 0 30px var(--ue-glow), 0 8px 30px rgba(0, 0, 0, 0.3); }
+      50% { box-shadow: 0 0 50px var(--ue-glow), 0 8px 30px rgba(0, 0, 0, 0.3); }
+    }
+
+    .audio-card-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .audio-icon {
+      width: 44px;
+      height: 44px;
+      background: linear-gradient(135deg, var(--ue-blue) 0%, #00a8cc 100%);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      flex-shrink: 0;
+      box-shadow: 0 4px 12px var(--ue-glow);
+    }
+
+    .audio-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .audio-name {
+      font-weight: 600;
+      font-size: 14px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 4px;
+    }
+
+    .audio-path {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-dim);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .audio-meta {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .meta-tag {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      background: var(--bg-hover);
+      padding: 5px 10px;
+      border-radius: 8px;
+      color: var(--text-muted);
+      font-weight: 600;
+      border: 1px solid var(--border);
+    }
+
+    .meta-tag.type-ogg { 
+      color: var(--ue-blue); 
+      background: rgba(0, 212, 255, 0.1); 
+      border-color: rgba(0, 212, 255, 0.3);
+    }
+    .meta-tag.type-wav { 
+      color: var(--warning); 
+      background: rgba(255, 204, 112, 0.1); 
+      border-color: rgba(255, 204, 112, 0.3);
+    }
+
+    .audio-player-container {
+      margin-bottom: 12px;
+    }
+
+    .audio-player {
+      width: 100%;
+      height: 36px;
+      border-radius: var(--radius-sm);
+      outline: none;
+    }
+
+    .audio-player::-webkit-media-controls-panel {
+      background: var(--bg-hover);
+    }
+
+    .audio-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 16px;
+      border-radius: 12px;
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent) 0%, #ff5c9a 100%);
+      color: var(--bg-deep);
+      box-shadow: 0 4px 12px var(--accent-glow);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px) scale(1.02);
+      box-shadow: 0 6px 20px var(--accent-glow);
+    }
+
+    .btn-secondary {
+      background: var(--bg-hover);
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    .btn-secondary:hover {
+      background: var(--bg-card);
+      border-color: var(--accent);
+      transform: translateY(-1px);
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-muted);
+    }
+
+    .btn-ghost:hover {
+      background: var(--bg-hover);
+      color: var(--text);
+      transform: scale(1.05);
+    }
+
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+
+    /* Empty state */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 40px;
+      text-align: center;
+    }
+
+    .empty-icon {
+      width: 90px;
+      height: 90px;
+      background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-hover) 100%);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 36px;
+      margin-bottom: 24px;
+      border: 3px dashed var(--border);
+      animation: wiggle 3s ease-in-out infinite;
+    }
+
+    @keyframes wiggle {
+      0%, 100% { transform: rotate(-3deg); }
+      50% { transform: rotate(3deg); }
+    }
+
+    .empty-state h3 {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .empty-state p {
+      color: var(--text-muted);
+      font-size: 15px;
+      max-width: 400px;
+      line-height: 1.5;
+    }
+
+    /* Loading state */
+    .loading {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 18px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .spinner {
+      width: 22px;
+      height: 22px;
+      border: 3px solid var(--border);
+      border-top-color: var(--ue-blue);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Progress bar */
+    .progress-bar {
+      height: 8px;
+      background: var(--bg-card);
+      border-radius: 10px;
+      overflow: hidden;
+      margin: 14px 0;
+      border: 1px solid var(--border);
+    }
+
+    .progress-bar .fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--ue-blue), var(--accent), var(--accent-secondary));
+      background-size: 200% 100%;
+      width: 0%;
+      transition: width 0.3s ease;
+      animation: shimmer 2s linear infinite;
+      border-radius: 10px;
+    }
+
+    @keyframes shimmer {
+      0% { background-position: 100% 0; }
+      100% { background-position: -100% 0; }
+    }
+
+    /* Stats bar */
+    .stats-bar {
+      display: flex;
+      gap: 24px;
+      padding: 16px 20px;
+      background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-hover) 100%);
+      border-radius: 14px;
+      margin-bottom: 18px;
+      border: 2px solid var(--border);
+    }
+
+    .stat {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .stat-icon {
+      font-size: 18px;
+    }
+
+    .stat-value {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: var(--ue-blue);
+      font-size: 16px;
+    }
+
+    .stat-label {
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .sidebar {
+        width: 260px;
+      }
+      .audio-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 700px) {
+      .main {
+        flex-direction: column;
+      }
+      .sidebar {
+        width: 100%;
+        height: 200px;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+    }
+
+    /* Hide file input */
+    .hidden-input {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <div class="logo">
+    <div class="logo-icon">🎵</div>
+    <h1><span class="ue">ue</span><span class="xtract">xtract</span></h1>
+    <span class="subtitle">✨ browser-only</span>
+  </div>
+  <div class="header-actions">
+    <button id="downloadAllOggBtn" class="btn btn-secondary" disabled>
+      <span>📥</span> All OGG
+    </button>
+    <button id="downloadAllWavBtn" class="btn btn-secondary" disabled>
+      <span>📥</span> All WAV
+    </button>
+    <button id="resetBtn" class="btn btn-ghost" disabled>
+      <span>🔄</span> Reset
+    </button>
+  </div>
+</header>
+
+<main class="main">
+  <!-- Sidebar: File Tree -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <h2>📁 File Browser</h2>
+      <span class="file-count" id="fileCount">0 files</span>
+    </div>
+    <div class="tree-container" id="treeContainer">
+      <div class="empty-state" style="padding: 40px 20px;">
+        <div class="empty-icon" style="width: 60px; height: 60px; font-size: 24px;">🎮</div>
+        <p style="font-size: 13px;">Drop some files to explore~</p>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Content Area -->
+  <section class="content">
+    <div class="dropzone-wrapper">
+      <div id="dropzone" class="dropzone">
+        <span class="dropzone-icon">📦✨</span>
+        <h3>Drop your Unreal assets here!</h3>
+        <p>Drag folders or .uasset/.uexp files from your game</p>
+        <div class="hint">🎮 Supports .uasset + .uexp pairs with OGG/WAV audio</div>
+        <input id="fileInput" type="file" class="hidden-input" webkitdirectory multiple />
+      </div>
+      <div class="progress-bar" id="progressBar" style="display: none;">
+        <div class="fill" id="progressFill"></div>
+      </div>
+      <div id="statusText" class="loading" style="display: none;">
+        <div class="spinner"></div>
+        <span>Processing files...</span>
+      </div>
+    </div>
+
+    <div class="audio-list-wrapper" id="audioListWrapper">
+      <!-- Audio cards will be inserted here -->
+    </div>
+  </section>
+</main>
+
+<input id="folderInput" type="file" class="hidden-input" webkitdirectory />
+
+<script>
+// ============================================================
+// uextract – Cute UE Audio Extractor ✨
+// Browser-only extraction for Unreal Engine assets
+// ============================================================
+
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const folderInput = document.getElementById('folderInput');
+const treeContainer = document.getElementById('treeContainer');
+const fileCountEl = document.getElementById('fileCount');
+const progressBar = document.getElementById('progressBar');
+const progressFill = document.getElementById('progressFill');
+const statusText = document.getElementById('statusText');
+const audioListWrapper = document.getElementById('audioListWrapper');
+const downloadAllOggBtn = document.getElementById('downloadAllOggBtn');
+const downloadAllWavBtn = document.getElementById('downloadAllWavBtn');
+const resetBtn = document.getElementById('resetBtn');
+
+// Audio signatures
+const SIGNATURES = {
+  ogg: new Uint8Array([0x4F, 0x67, 0x67, 0x53]), // "OggS"
+  riff: new Uint8Array([0x52, 0x49, 0x46, 0x46]), // "RIFF"
+  wave: new Uint8Array([0x57, 0x41, 0x56, 0x45]), // "WAVE"
+};
+
+// State
+let allAssets = [];
+let extractedAudio = [];
+let fileTree = {};
+
+// ============================================================
+// Event Listeners
+// ============================================================
+
+dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  dropzone.classList.add('dragover');
+});
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+dropzone.addEventListener('drop', handleDrop);
+fileInput.addEventListener('change', (e) => processFiles(e.target.files));
+resetBtn.addEventListener('click', resetUI);
+downloadAllOggBtn.addEventListener('click', () => downloadAllAudio('ogg'));
+downloadAllWavBtn.addEventListener('click', () => downloadAllAudio('wav'));
+
+async function handleDrop(e) {
+  e.preventDefault();
+  dropzone.classList.remove('dragover');
+  
+  const items = e.dataTransfer.items;
+  const files = [];
+  
+  // Handle folder drops
+  if (items) {
+    const entries = [];
+    for (const item of items) {
+      const entry = item.webkitGetAsEntry?.();
+      if (entry) entries.push(entry);
+    }
+    
+    if (entries.length > 0) {
+      showStatus('Scanning folders...');
+      for (const entry of entries) {
+        await traverseFileTree(entry, files);
+      }
+    }
+  }
+  
+  if (files.length > 0) {
+    await processFiles(files);
+  } else if (e.dataTransfer.files.length > 0) {
+    await processFiles(e.dataTransfer.files);
+  }
+}
+
+async function traverseFileTree(entry, files, path = '') {
+  if (entry.isFile) {
+    const file = await new Promise((resolve) => entry.file(resolve));
+    file.relativePath = path + file.name;
+    files.push(file);
+  } else if (entry.isDirectory) {
+    const reader = entry.createReader();
+    const entries = await new Promise((resolve) => {
+      const allEntries = [];
+      const readBatch = () => {
+        reader.readEntries((batch) => {
+          if (batch.length === 0) {
+            resolve(allEntries);
+          } else {
+            allEntries.push(...batch);
+            readBatch();
+          }
+        });
+      };
+      readBatch();
+    });
+    
+    for (const child of entries) {
+      await traverseFileTree(child, files, path + entry.name + '/');
+    }
+  }
+}
+
+// ============================================================
+// File Processing
+// ============================================================
+
+async function processFiles(fileList) {
+  if (!fileList || fileList.length === 0) return;
+  
+  resetUI();
+  showProgress(0);
+  showStatus('Reading files...');
+  
+  const files = Array.from(fileList);
+  const assetFiles = files.filter(f => {
+    const name = f.name.toLowerCase();
+    return name.endsWith('.uasset') || name.endsWith('.uexp');
+  });
+  
+  if (assetFiles.length === 0) {
+    hideStatus();
+    hideProgress();
+    showEmptyState('No .uasset or .uexp files found in the selection.');
+    return;
+  }
+  
+  fileCountEl.textContent = `${assetFiles.length} files`;
+  resetBtn.disabled = false;
+  
+  // Read all files
+  const fileData = [];
+  for (let i = 0; i < assetFiles.length; i++) {
+    const file = assetFiles[i];
+    const buffer = await file.arrayBuffer();
+    fileData.push({
+      file,
+      buffer,
+      path: file.relativePath || file.webkitRelativePath || file.name,
+    });
+    showProgress((i + 1) / assetFiles.length * 50);
+  }
+  
+  // Group by package
+  showStatus('Grouping packages...');
+  const packages = groupPackages(fileData);
+  
+  // Build file tree
+  buildFileTree(packages);
+  renderFileTree();
+  
+  // Extract audio
+  showStatus('Extracting audio...');
+  allAssets = [];
+  extractedAudio = [];
+  
+  const packageList = Object.values(packages);
+  for (let i = 0; i < packageList.length; i++) {
+    const pkg = packageList[i];
+    const result = await processPackage(pkg);
+    if (result) {
+      allAssets.push(result);
+      if (result.audio.length > 0) {
+        extractedAudio.push(result);
+      }
+    }
+    showProgress(50 + (i + 1) / packageList.length * 50);
+  }
+  
+  hideProgress();
+  hideStatus();
+  
+  if (extractedAudio.length > 0) {
+    downloadAllOggBtn.disabled = false;
+    downloadAllWavBtn.disabled = false;
+    renderAudioList(extractedAudio);
+  } else {
+    showEmptyState('No playable audio found. Assets may use Wwise or other encoded formats.');
+  }
+}
+
+function groupPackages(fileData) {
+  const packages = {};
+  
+  for (const { file, buffer, path } of fileData) {
+    const name = file.name;
+    const match = name.match(/^(.+)\.(uasset|uexp)$/i);
+    if (!match) continue;
+    
+    const baseName = match[1];
+    const ext = match[2].toLowerCase();
+    const dir = path.replace(/[^\/\\]*$/, '');
+    const key = dir + baseName;
+    
+    if (!packages[key]) {
+      packages[key] = {
+        name: baseName,
+        path: dir,
+        fullPath: key,
+        files: {},
+      };
+    }
+    
+    packages[key].files[ext] = { file, buffer };
+  }
+  
+  return packages;
+}
+
+async function processPackage(pkg) {
+  const { name, path, files, fullPath } = pkg;
+  
+  // Parse uasset for metadata
+  let metadata = { type: 'Unknown', assetName: name };
+  if (files.uasset) {
+    metadata = parseUAssetMetadata(files.uasset.buffer);
+    metadata.assetName = metadata.assetName || name;
+  }
+  
+  // Extract audio from uexp
+  const audio = [];
+  if (files.uexp) {
+    const bytes = new Uint8Array(files.uexp.buffer);
+    
+    // Find OGG data
+    const oggOffset = findSignature(bytes, SIGNATURES.ogg);
+    if (oggOffset !== -1) {
+      // Extract OGG starting from signature
+      const oggData = bytes.slice(oggOffset);
+      audio.push({
+        type: 'ogg',
+        blob: new Blob([oggData], { type: 'audio/ogg' }),
+        offset: oggOffset,
+        size: oggData.length,
+      });
+    }
+    
+    // Find WAV data (RIFF header)
+    const riffOffset = findSignature(bytes, SIGNATURES.riff);
+    if (riffOffset !== -1 && riffOffset !== oggOffset) {
+      const wavData = extractWav(bytes, riffOffset);
+      if (wavData) {
+        audio.push({
+          type: 'wav',
+          blob: new Blob([wavData], { type: 'audio/wav' }),
+          offset: riffOffset,
+          size: wavData.length,
+        });
+      }
+    }
+  }
+  
+  return {
+    name,
+    path,
+    fullPath,
+    metadata,
+    audio,
+    hasUasset: !!files.uasset,
+    hasUexp: !!files.uexp,
+  };
+}
+
+function parseUAssetMetadata(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const text = extractStrings(bytes);
+  
+  const metadata = {
+    type: 'Unknown',
+    assetName: null,
+    duration: null,
+    channels: null,
+    sampleRate: null,
+    format: null,
+  };
+  
+  // Detect asset type
+  if (text.includes('SoundWave')) {
+    metadata.type = 'SoundWave';
+  } else if (text.includes('SoundCue')) {
+    metadata.type = 'SoundCue';
+  } else if (text.includes('DialogueWave')) {
+    metadata.type = 'DialogueWave';
+  } else if (text.includes('DialogueVoice')) {
+    metadata.type = 'DialogueVoice';
+  } else if (text.includes('SoundClass')) {
+    metadata.type = 'SoundClass';
+  } else if (text.includes('SoundMix')) {
+    metadata.type = 'SoundMix';
+  } else if (text.includes('SoundAttenuation')) {
+    metadata.type = 'Attenuation';
+  } else if (text.includes('SoundConcurrency')) {
+    metadata.type = 'Concurrency';
+  }
+  
+  // Extract format info
+  const oggMatch = text.match(/OGG\d+/);
+  if (oggMatch) metadata.format = 'OGG';
+  
+  const wavMatch = text.match(/WAV|PCM/i);
+  if (wavMatch) metadata.format = 'WAV';
+  
+  // Extract game path
+  const pathMatch = text.match(/\/Game\/[^\/]+\/[^\x00]+/);
+  if (pathMatch) {
+    const parts = pathMatch[0].split('/');
+    metadata.assetName = parts[parts.length - 1].replace(/\x00/g, '');
+  }
+  
+  return metadata;
+}
+
+function extractStrings(bytes, minLength = 4) {
+  let result = '';
+  let current = '';
+  
+  for (let i = 0; i < bytes.length; i++) {
+    const c = bytes[i];
+    if (c >= 32 && c < 127) {
+      current += String.fromCharCode(c);
+    } else {
+      if (current.length >= minLength) {
+        result += current + '\n';
+      }
+      current = '';
+    }
+  }
+  
+  if (current.length >= minLength) {
+    result += current;
+  }
+  
+  return result;
+}
+
+function findSignature(bytes, sig) {
+  for (let i = 0; i <= bytes.length - sig.length; i++) {
+    let match = true;
+    for (let j = 0; j < sig.length; j++) {
+      if (bytes[i + j] !== sig[j]) {
+        match = false;
+        break;
+      }
+    }
+    if (match) return i;
+  }
+  return -1;
+}
+
+function extractWav(bytes, offset) {
+  if (offset + 12 > bytes.length) return null;
+  
+  const view = new DataView(bytes.buffer, bytes.byteOffset + offset);
+  const size = view.getUint32(4, true);
+  const format = String.fromCharCode(
+    view.getUint8(8), view.getUint8(9), view.getUint8(10), view.getUint8(11)
+  );
+  
+  if (format !== 'WAVE') return null;
+  
+  const end = Math.min(bytes.length, offset + size + 8);
+  return bytes.slice(offset, end);
+}
+
+// ============================================================
+// File Tree
+// ============================================================
+
+function buildFileTree(packages) {
+  fileTree = { name: 'root', children: {}, type: 'folder' };
+  
+  for (const [key, pkg] of Object.entries(packages)) {
+    const parts = pkg.path.split(/[\/\\]/).filter(Boolean);
+    let current = fileTree;
+    
+    for (const part of parts) {
+      if (!current.children[part]) {
+        current.children[part] = { name: part, children: {}, type: 'folder' };
+      }
+      current = current.children[part];
+    }
+    
+    const icon = pkg.files.uexp ? 
+      (pkg.name.includes('Cue') ? 'cue' : 'audio') : 'data';
+    
+    current.children[pkg.name] = {
+      name: pkg.name,
+      type: 'file',
+      icon,
+      pkg,
+    };
+  }
+}
+
+function renderFileTree() {
+  treeContainer.innerHTML = '';
+  renderTreeNode(fileTree, treeContainer, 0);
+}
+
+function renderTreeNode(node, container, depth) {
+  if (node.type === 'folder' && node.name !== 'root') {
+    const folder = document.createElement('div');
+    folder.className = 'tree-folder';
+    folder.style.paddingLeft = `${depth * 12}px`;
+    
+    const header = document.createElement('div');
+    header.className = 'tree-folder-header';
+    header.innerHTML = `
+      <span class="chevron">▼</span>
+      <span class="icon folder">📁</span>
+      <span class="name">${escapeHtml(node.name)}</span>
+    `;
+    
+    const children = document.createElement('div');
+    children.className = 'tree-folder-children';
+    
+    header.addEventListener('click', () => {
+      header.classList.toggle('collapsed');
+      children.classList.toggle('hidden');
+    });
+    
+    folder.appendChild(header);
+    folder.appendChild(children);
+    container.appendChild(folder);
+    
+    // Render children
+    const sortedChildren = Object.values(node.children).sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    
+    for (const child of sortedChildren) {
+      renderTreeNode(child, children, depth + 1);
+    }
+  } else if (node.type === 'file') {
+    const item = document.createElement('div');
+    item.className = 'tree-item';
+    item.style.paddingLeft = `${(depth + 1) * 12 + 16}px`;
+    
+    const iconClass = node.icon || 'data';
+    const icons = { audio: '🔊', cue: '🎵', data: '📄' };
+    
+    item.innerHTML = `
+      <span class="icon ${iconClass}">${icons[iconClass]}</span>
+      <span class="name" title="${escapeHtml(node.name)}">${escapeHtml(node.name)}</span>
+    `;
+    
+    item.addEventListener('click', () => {
+      document.querySelectorAll('.tree-item.selected').forEach(el => el.classList.remove('selected'));
+      item.classList.add('selected');
+      scrollToAsset(node.pkg?.fullPath);
+    });
+    
+    container.appendChild(item);
+  } else if (node.name === 'root') {
+    // Render root children
+    const sortedChildren = Object.values(node.children).sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    
+    for (const child of sortedChildren) {
+      renderTreeNode(child, container, depth);
+    }
+  }
+}
+
+function scrollToAsset(fullPath) {
+  if (!fullPath) return;
+  const card = document.querySelector(`[data-asset-path="${CSS.escape(fullPath)}"]`);
+  if (card) {
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    card.style.animation = 'none';
+    card.offsetHeight; // Trigger reflow
+    card.style.animation = 'pulse 0.5s ease';
+  }
+}
+
+// ============================================================
+// Audio Rendering
+// ============================================================
+
+function renderAudioList(assets) {
+  audioListWrapper.innerHTML = `
+    <div class="section-header">
+      <h2>🎶 Found Audio!</h2>
+      <span class="badge">✨ ${assets.length} assets</span>
+    </div>
+    <div class="stats-bar">
+      <div class="stat">
+        <span class="stat-icon">📦</span>
+        <span class="stat-value">${allAssets.length}</span>
+        <span class="stat-label">packages</span>
+      </div>
+      <div class="stat">
+        <span class="stat-icon">🎵</span>
+        <span class="stat-value">${extractedAudio.length}</span>
+        <span class="stat-label">with audio</span>
+      </div>
+      <div class="stat">
+        <span class="stat-icon">💿</span>
+        <span class="stat-value">${extractedAudio.reduce((acc, a) => acc + a.audio.length, 0)}</span>
+        <span class="stat-label">tracks</span>
+      </div>
+    </div>
+    <div class="audio-grid" id="audioGrid"></div>
+  `;
+  
+  const grid = document.getElementById('audioGrid');
+  
+  for (const asset of assets) {
+    for (let i = 0; i < asset.audio.length; i++) {
+      const audio = asset.audio[i];
+      const card = createAudioCard(asset, audio, i);
+      grid.appendChild(card);
+    }
+  }
+}
+
+function createAudioCard(asset, audio, index) {
+  const card = document.createElement('div');
+  card.className = 'audio-card';
+  card.dataset.assetPath = asset.fullPath;
+  
+  const url = URL.createObjectURL(audio.blob);
+  const typeClass = audio.type === 'ogg' ? 'type-ogg' : 'type-wav';
+  const sizeKB = (audio.size / 1024).toFixed(1);
+  
+  card.innerHTML = `
+    <div class="audio-card-header">
+      <div class="audio-icon">🔊</div>
+      <div class="audio-info">
+        <div class="audio-name" title="${escapeHtml(asset.name)}">${escapeHtml(asset.name)}</div>
+        <div class="audio-path" title="${escapeHtml(asset.path)}">${escapeHtml(asset.path || 'Root')}</div>
+      </div>
+    </div>
+    <div class="audio-meta">
+      <span class="meta-tag ${typeClass}">${audio.type.toUpperCase()}</span>
+      <span class="meta-tag">${sizeKB} KB</span>
+      <span class="meta-tag">${asset.metadata.type}</span>
+    </div>
+    <div class="audio-player-container">
+      <audio class="audio-player" controls src="${url}"></audio>
+    </div>
+    <div class="audio-actions">
+      <button class="btn btn-primary download-btn">
+        <span>💾</span> OGG
+      </button>
+      <button class="btn btn-secondary download-wav-btn">
+        <span>💾</span> WAV
+      </button>
+      <button class="btn btn-ghost copy-btn">
+        <span>📋</span>
+      </button>
+    </div>
+  `;
+  
+  // Event listeners
+  const audioEl = card.querySelector('audio');
+  audioEl.addEventListener('play', () => {
+    document.querySelectorAll('.audio-card.playing').forEach(c => c.classList.remove('playing'));
+    card.classList.add('playing');
+  });
+  audioEl.addEventListener('pause', () => card.classList.remove('playing'));
+  audioEl.addEventListener('ended', () => card.classList.remove('playing'));
+  
+  card.querySelector('.download-btn').addEventListener('click', () => {
+    downloadAudio(asset.name, audio, index);
+  });
+  
+  card.querySelector('.download-wav-btn').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;"></span> Converting...';
+    try {
+      await downloadAsWav(asset.name, audio, index);
+    } catch (err) {
+      console.error('WAV conversion failed:', err);
+      alert('WAV conversion failed. The audio may be in an unsupported format.');
+    }
+    btn.disabled = false;
+    btn.innerHTML = '<span>⬇</span> WAV';
+  });
+  
+  card.querySelector('.copy-btn').addEventListener('click', () => {
+    navigator.clipboard.writeText(asset.name);
+    const btn = card.querySelector('.copy-btn');
+    btn.innerHTML = '<span>✓</span>';
+    setTimeout(() => btn.innerHTML = '<span>📋</span>', 1500);
+  });
+  
+  return card;
+}
+
+function downloadAudio(name, audio, index) {
+  const ext = audio.type === 'ogg' ? '.ogg' : '.wav';
+  const filename = sanitizeName(name) + (index > 0 ? `_${index + 1}` : '') + ext;
+  
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(audio.blob);
+  link.download = filename;
+  link.click();
+}
+
+async function downloadAsWav(name, audio, index) {
+  const filename = sanitizeName(name) + (index > 0 ? `_${index + 1}` : '') + '.wav';
+  
+  // Decode the audio using Web Audio API
+  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  const arrayBuffer = await audio.blob.arrayBuffer();
+  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+  
+  // Convert to WAV
+  const wavBlob = audioBufferToWav(audioBuffer);
+  
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(wavBlob);
+  link.download = filename;
+  link.click();
+  
+  audioContext.close();
+}
+
+function audioBufferToWav(audioBuffer) {
+  const numChannels = audioBuffer.numberOfChannels;
+  const sampleRate = audioBuffer.sampleRate;
+  const format = 1; // PCM
+  const bitDepth = 16;
+  
+  // Interleave channels
+  const length = audioBuffer.length * numChannels;
+  const samples = new Float32Array(length);
+  
+  for (let channel = 0; channel < numChannels; channel++) {
+    const channelData = audioBuffer.getChannelData(channel);
+    for (let i = 0; i < audioBuffer.length; i++) {
+      samples[i * numChannels + channel] = channelData[i];
+    }
+  }
+  
+  // Convert to 16-bit PCM
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+  
+  // Write WAV header
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, 36 + samples.length * 2, true);
+  writeString(view, 8, 'WAVE');
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true); // Subchunk1Size
+  view.setUint16(20, format, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * numChannels * bitDepth / 8, true); // ByteRate
+  view.setUint16(32, numChannels * bitDepth / 8, true); // BlockAlign
+  view.setUint16(34, bitDepth, true);
+  writeString(view, 36, 'data');
+  view.setUint32(40, samples.length * 2, true);
+  
+  // Write audio data
+  let offset = 44;
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    offset += 2;
+  }
+  
+  return new Blob([buffer], { type: 'audio/wav' });
+}
+
+function writeString(view, offset, string) {
+  for (let i = 0; i < string.length; i++) {
+    view.setUint8(offset + i, string.charCodeAt(i));
+  }
+}
+
+async function downloadAllAudio(format = 'ogg') {
+  const btn = format === 'ogg' ? downloadAllOggBtn : downloadAllWavBtn;
+  const originalText = btn.innerHTML;
+  btn.disabled = true;
+  
+  let idx = 0;
+  const total = extractedAudio.reduce((acc, a) => acc + a.audio.length, 0);
+  
+  for (const asset of extractedAudio) {
+    for (let i = 0; i < asset.audio.length; i++) {
+      const audio = asset.audio[i];
+      btn.innerHTML = `<span class="spinner" style="width:14px;height:14px;border-width:2px;"></span> ${idx + 1}/${total}`;
+      
+      if (format === 'wav') {
+        try {
+          await downloadAsWav(asset.name, audio, i);
+        } catch (e) {
+          console.error('Failed to convert:', asset.name, e);
+        }
+      } else {
+        downloadAudio(asset.name, audio, i);
+      }
+      
+      // Small delay between downloads
+      await new Promise(r => setTimeout(r, format === 'wav' ? 100 : 150));
+      idx++;
+    }
+  }
+  
+  btn.disabled = false;
+  btn.innerHTML = originalText;
+}
+
+// ============================================================
+// UI Helpers
+// ============================================================
+
+function showProgress(pct) {
+  progressBar.style.display = 'block';
+  progressFill.style.width = `${pct}%`;
+}
+
+function hideProgress() {
+  progressBar.style.display = 'none';
+  progressFill.style.width = '0%';
+}
+
+function showStatus(text) {
+  statusText.style.display = 'flex';
+  statusText.querySelector('span').textContent = text;
+}
+
+function hideStatus() {
+  statusText.style.display = 'none';
+}
+
+function showEmptyState(message) {
+  audioListWrapper.innerHTML = `
+    <div class="empty-state">
+      <div class="empty-icon">😿</div>
+      <h3>No Audio Found</h3>
+      <p>${escapeHtml(message)}</p>
+    </div>
+  `;
+}
+
+function resetUI() {
+  allAssets = [];
+  extractedAudio = [];
+  fileTree = {};
+  
+  audioListWrapper.innerHTML = '';
+  treeContainer.innerHTML = `
+    <div class="empty-state" style="padding: 40px 20px;">
+      <div class="empty-icon" style="width: 60px; height: 60px; font-size: 24px;">🎮</div>
+      <p style="font-size: 13px;">Drop some files to explore~</p>
+    </div>
+  `;
+  
+  fileCountEl.textContent = '0 files';
+  downloadAllOggBtn.disabled = true;
+  downloadAllWavBtn.disabled = true;
+  resetBtn.disabled = true;
+  fileInput.value = '';
+  hideProgress();
+  hideStatus();
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+function sanitizeName(name) {
+  return name.replace(/[^a-zA-Z0-9_\-\.]/g, '_').slice(0, 100) || 'audio';
+}
+
+// Add pulse animation
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes pulse {
+    0%, 100% { box-shadow: none; }
+    50% { box-shadow: 0 0 20px var(--accent-glow), inset 0 0 10px var(--accent-glow); }
+  }
+`;
+document.head.appendChild(style);
+
+</script>
+</body>
+</html>
