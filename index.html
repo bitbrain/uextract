@@ -308,6 +308,30 @@
       *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
     }
     .hidden-input { display: none; }
+
+    /* ── Staging UI ── */
+    .staged-list {
+      text-align: left; max-height: 140px; overflow-y: auto;
+      margin: 8px auto; max-width: 340px;
+    }
+    .staged-list::-webkit-scrollbar { width: 5px; }
+    .staged-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .staged-folder {
+      display: flex; align-items: center; gap: 6px;
+      padding: 5px 8px; font-size: 12px; color: var(--text-muted);
+      background: var(--bg-hover); border-radius: 6px; margin-bottom: 3px;
+    }
+    .staged-folder .folder-name {
+      flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .staged-folder .remove-staged {
+      background: none; border: none; color: var(--text-dim);
+      cursor: pointer; font-size: 14px; padding: 0 2px; line-height: 1;
+    }
+    .staged-folder .remove-staged:hover { color: var(--error); }
+    .staged-actions {
+      display: flex; gap: 8px; justify-content: center; margin-top: 10px;
+    }
   </style>
 </head>
 <body>
@@ -400,6 +424,9 @@ let activeBlobUrl = null;   // only one at a time (lazy)
 let treeItemEls = [];       // for filtering
 let crossRef = { eventToMedia: {}, mediaToEvent: {}, dialogueData: {}, mediaToDialogue: {}, assetByName: {} };
 let fileTreeFrag = null;    // cached file-tree DOM when switching to dialogue view
+let stagedEntries = [];     // { name, files: File[]|null } per queued folder
+let isStaging = false;
+let stagingBusy = 0;        // folders still loading file lists
 
 // Perf
 let lastPT = 0;
@@ -412,11 +439,11 @@ function throttleProg(p) {
 // ============================================================
 // Events
 // ============================================================
-dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('click', onDropzoneClick);
 dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
 dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
 dropzone.addEventListener('drop', handleDrop);
-fileInput.addEventListener('change', e => processFiles(e.target.files));
+fileInput.addEventListener('change', e => stageFolder(e.target.files));
 resetBtn.addEventListener('click', resetUI);
 downloadAllOggBtn.addEventListener('click', () => downloadAllAudio('ogg'));
 downloadAllWavBtn.addEventListener('click', () => downloadAllAudio('wav'));
@@ -471,6 +498,148 @@ async function walkTree(entry, files, path = '') {
     });
     for (const c of all) await walkTree(c, files, path + entry.name + '/');
   }
+}
+
+// ============================================================
+// Multi-folder staging (file picker only allows 1 folder at a time)
+// ============================================================
+function onDropzoneClick(e) {
+  const btn = e.target.closest('button');
+  if (btn) {
+    if (btn.id === 'addMoreBtn') pickFolder();
+    else if (btn.id === 'importAllBtn') importStaged();
+    else if (btn.classList.contains('remove-staged')) removeStaged(+btn.dataset.idx);
+    return;
+  }
+  if (!isStaging) pickFolder();
+}
+
+async function pickFolder() {
+  // Try modern File System Access API (non-blocking, no freeze for large folders)
+  if (window.showDirectoryPicker) {
+    try {
+      const dirHandle = await window.showDirectoryPicker({ mode: 'read' });
+      const files = [];
+      const entry = { name: dirHandle.name, files: files };
+      stagedEntries.push(entry);
+      isStaging = true;
+      stagingBusy++;
+      renderStagingUI();
+      await walkDirHandle(dirHandle, '', files);
+      stagingBusy--;
+      updateImportBtn();
+      return;
+    } catch (e) {
+      if (e.name === 'AbortError') return; // user cancelled picker
+      // Fall through to legacy picker on other errors
+    }
+  }
+  // Fallback: legacy file input (may freeze briefly for very large folders)
+  const fi = $('fileInput');
+  if (fi) fi.click();
+}
+
+async function walkDirHandle(handle, path, files) {
+  try {
+    for await (const entry of handle.values()) {
+      try {
+        if (entry.kind === 'file') {
+          const file = await entry.getFile();
+          file.relativePath = path + file.name;
+          files.push(file);
+          if (files.length % 200 === 0) { updateImportBtn(); await yieldToMain(); }
+        } else if (entry.kind === 'directory') {
+          await walkDirHandle(entry, path + entry.name + '/', files);
+        }
+      } catch (_) { /* skip unreadable entries */ }
+    }
+  } catch (_) { /* skip unreadable directories */ }
+}
+
+function stageFolder(fileList) {
+  // Legacy path: called from <input webkitdirectory> change event
+  if (!fileList || !fileList.length) return;
+  const firstPath = fileList[0].webkitRelativePath || fileList[0].relativePath || fileList[0].name;
+  const folderName = firstPath.split('/')[0] || 'Selected files';
+  const entry = { name: folderName, files: null };
+  stagedEntries.push(entry);
+  isStaging = true;
+  stagingBusy++;
+  renderStagingUI();
+  // Capture file array asynchronously so the folder appears in the list instantly
+  const fl = fileList;
+  setTimeout(() => {
+    entry.files = Array.from(fl);
+    stagingBusy--;
+    updateImportBtn();
+  }, 0);
+}
+
+function renderStagingUI() {
+  const dz = $('dropzone');
+  if (!dz) return;
+  let html = '<span class="dropzone-icon">📦</span>' +
+    '<h3>' + stagedEntries.length + ' folder' + (stagedEntries.length !== 1 ? 's' : '') + ' selected</h3>' +
+    '<div class="staged-list">';
+  for (let i = 0; i < stagedEntries.length; i++) {
+    html += '<div class="staged-folder">' +
+      '<span>📁</span><span class="folder-name">' + esc(stagedEntries[i].name) + '</span>' +
+      '<button class="remove-staged" data-idx="' + i + '" title="Remove">✕</button></div>';
+  }
+  html += '</div>' +
+    '<div class="staged-actions">' +
+      '<button class="btn btn-secondary" id="addMoreBtn">📁 Add Folder</button>' +
+      '<button class="btn btn-primary" id="importAllBtn" disabled>' +
+        '<span class="spinner" style="width:12px;height:12px;border-width:2px;vertical-align:middle"></span> Preparing\u2026' +
+      '</button>' +
+    '</div>' +
+    '<input id="fileInput" type="file" class="hidden-input" webkitdirectory multiple />';
+  dz.innerHTML = html;
+  $('fileInput').addEventListener('change', e => stageFolder(e.target.files));
+  if (stagingBusy === 0) updateImportBtn();
+}
+
+function updateImportBtn() {
+  const btn = $('importAllBtn');
+  if (!btn) return;
+  if (stagingBusy > 0) {
+    btn.disabled = true;
+    const sofar = stagedEntries.reduce((s, e) => s + (e.files ? e.files.length : 0), 0);
+    btn.innerHTML = '<span class="spinner" style="width:12px;height:12px;border-width:2px;vertical-align:middle"></span> ' +
+      (sofar > 0 ? sofar.toLocaleString() + ' files scanned\u2026' : 'Preparing\u2026');
+  } else {
+    const total = stagedEntries.reduce((s, e) => s + (e.files ? e.files.length : 0), 0);
+    btn.disabled = false;
+    btn.textContent = '\uD83D\uDCE5 Import ' + total.toLocaleString() + ' Files';
+  }
+}
+
+function removeStaged(idx) {
+  if (idx < 0 || idx >= stagedEntries.length) return;
+  stagedEntries.splice(idx, 1);
+  if (stagedEntries.length === 0) clearStaged();
+  else renderStagingUI();
+}
+
+function clearStaged() {
+  stagedEntries = []; isStaging = false; stagingBusy = 0;
+  const dz = $('dropzone');
+  if (dz) {
+    dz.innerHTML = '<span class="dropzone-icon">📦</span>' +
+      '<h3>Drop your Unreal assets here</h3>' +
+      '<p>Drag folders or .uasset / .uexp / .ubulk files</p>' +
+      '<div class="hint">OGG/WAV · Wwise WEM · DlgSystem dialogue · .ubulk</div>' +
+      '<input id="fileInput" type="file" class="hidden-input" webkitdirectory multiple />';
+    $('fileInput').addEventListener('change', e => stageFolder(e.target.files));
+  }
+}
+
+async function importStaged() {
+  if (stagingBusy > 0) return;
+  const files = [];
+  for (const entry of stagedEntries) { if (entry.files) files.push(...entry.files); }
+  stagedEntries = []; isStaging = false; stagingBusy = 0;
+  if (files.length) await processFiles(files);
 }
 
 // ============================================================
@@ -1728,6 +1897,7 @@ function resetUI() {
   allAssets=[]; fileTree={}; selectedAsset=null; currentFilter='all'; treeItemEls=[];
   crossRef = { eventToMedia:{}, mediaToEvent:{}, dialogueData:{}, mediaToDialogue:{}, assetByName:{} };
   fileTreeFrag = null;
+  stagedEntries=[]; isStaging=false; stagingBusy=0;
   detailPanel.style.display='none'; detailPanel.innerHTML='';
   // Restore dropzone
   dropzoneWrapper.classList.remove('collapsed');
@@ -1743,11 +1913,11 @@ function resetUI() {
     '<div id="statusText" class="loading" style="display:none"><div class="spinner"></div><span>Processing...</span></div>';
   // Rebind
   const dz = $('dropzone'), fi = $('fileInput');
-  dz.addEventListener('click', () => fi.click());
+  dz.addEventListener('click', onDropzoneClick);
   dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
   dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
   dz.addEventListener('drop', handleDrop);
-  fi.addEventListener('change', e => processFiles(e.target.files));
+  fi.addEventListener('change', e => stageFolder(e.target.files));
 
   treeContainer.innerHTML = '<div class="detail-empty" style="padding:30px 16px"><div class="de-icon">🎮</div><p>Drop files to browse</p></div>';
   fileCountEl.textContent = '0';
