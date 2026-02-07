@@ -255,6 +255,13 @@
     }
     .dialogue-line:last-child { border-bottom: none; }
 
+    /* ── Dialogue Browser ── */
+    .dlg-resolved {
+      display: block; font-family: var(--font-mono); font-size: 9px;
+      color: var(--ue-blue); opacity: 0.7; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis; margin-top: 1px;
+    }
+
     .meta-tag {
       font-family: var(--font-mono); font-size: 10px; font-weight: 600;
       padding: 2px 6px; border-radius: 4px;
@@ -390,6 +397,8 @@ let selectedAsset = null;
 let currentFilter = 'all';
 let activeBlobUrl = null;   // only one at a time (lazy)
 let treeItemEls = [];       // for filtering
+let crossRef = { eventToMedia: {}, mediaToEvent: {}, dialogueData: {}, mediaToDialogue: {}, assetByName: {} };
+let fileTreeFrag = null;    // cached file-tree DOM when switching to dialogue view
 
 // Perf
 let lastPT = 0;
@@ -505,6 +514,12 @@ async function processFiles(fileList) {
 
   hideProgress(); hideStatus();
 
+  // Build cross-reference index (event→media, dialogue→events)
+  showStatus('Building cross-references\u2026');
+  await yieldToMain();
+  buildCrossRef();
+  hideStatus();
+
   // Collapse dropzone, show tree
   dropzoneWrapper.classList.add('collapsed');
   dropzoneWrapper.innerHTML =
@@ -524,6 +539,9 @@ async function processFiles(fileList) {
     if (tags.has('wwise')) counts.wwise++;
     if (tags.has('data')) counts.data++;
   }
+  // Use cross-ref dialogue count if higher (catches dialogues even with 0 extracted text lines)
+  const dlgCount = Object.keys(crossRef.dialogueData).length;
+  if (dlgCount > counts.dialogue) counts.dialogue = dlgCount;
   $('cntAudio').textContent = counts.audio;
   $('cntDlg').textContent = counts.dialogue;
   $('cntWwise').textContent = counts.wwise;
@@ -561,10 +579,12 @@ function scanPackage(pkg) {
   const { name, path, files, fullPath } = pkg;
   let meta = { type: 'Unknown', assetName: name, format: null };
   let isDlg = false;
+  let refs = { events: [], media: [], character: null };
   if (files.uasset) {
     meta = parseUAssetMeta(files.uasset.buffer);
     meta.assetName = meta.assetName || name;
     isDlg = meta.type.startsWith('Dlg') || meta.type === 'DialogueWave';
+    refs = extractAssetRefs(files.uasset.buffer);
   }
   const tracks = [];
   if (files.uexp)  scanAudio(new Uint8Array(files.uexp.buffer), tracks, 'uexp');
@@ -572,7 +592,7 @@ function scanPackage(pkg) {
 
   const dlgLines = (isDlg && files.uexp) ? extractDlgText(new Uint8Array(files.uexp.buffer)) : [];
 
-  return { name, path, fullPath, meta, tracks, dlgLines, _files: files };
+  return { name, path, fullPath, meta, tracks, dlgLines, refs, _files: files };
 }
 
 function scanAudio(bytes, out, src) {
@@ -642,7 +662,7 @@ function convertWwisePcm(riffBytes, ch, sr, bps) {
 function assetTags(a) {
   const t = new Set();
   if (a.tracks.some(x=>x.playable)) t.add('audio');
-  if (a.dlgLines.length) t.add('dialogue');
+  if (a.dlgLines.length || a.meta.type.startsWith('Dlg') || a.meta.type === 'DialogueWave') t.add('dialogue');
   if (a.tracks.some(x=>!x.playable)) t.add('wwise');
   if (!t.size) t.add('data');
   return t;
@@ -704,8 +724,13 @@ function renderNode(node, container, depth) {
     const item = document.createElement('div');
     item.className = 'tree-item';
     item.style.paddingLeft = ((depth+1)*6+4)+'px';
+    const resolved = resolveMediaName(node.name);
+    const displayName = resolved || node.name;
+    const titleText = resolved ? esc(node.name) + ' → ' + esc(resolved) : esc(node.name);
     item.innerHTML = '<span class="icon">' + (icons[tag]||'📄') + '</span>' +
-      '<span class="name" title="'+esc(node.name)+'">' + esc(node.name) + '</span>' +
+      '<span class="name" title="' + titleText + '">' + esc(displayName) +
+        (resolved ? '<span class="dlg-resolved">' + esc(node.name) + '</span>' : '') +
+      '</span>' +
       '<span class="type-badge ' + (badgeCls[tag]||'') + '">' + tag + '</span>';
     item._asset = asset;
     item._tags = assetTags(asset);
@@ -719,6 +744,22 @@ function renderNode(node, container, depth) {
 }
 
 function applyFilter() {
+  // Dialogue filter: switch to dialogue tree view
+  if (currentFilter === 'dialogue' && Object.keys(crossRef.dialogueData).length > 0) {
+    if (!fileTreeFrag) {
+      fileTreeFrag = document.createDocumentFragment();
+      while (treeContainer.firstChild) fileTreeFrag.appendChild(treeContainer.firstChild);
+    }
+    treeContainer.innerHTML = '';
+    treeContainer.appendChild(renderDialogueTree());
+    return;
+  }
+  // Restore file tree if coming from dialogue view
+  if (fileTreeFrag) {
+    treeContainer.innerHTML = '';
+    treeContainer.appendChild(fileTreeFrag);
+    fileTreeFrag = null;
+  }
   for (const el of treeItemEls) {
     const show = currentFilter === 'all' || el._tags.has(currentFilter);
     el.classList.toggle('filtered-out', !show);
@@ -928,12 +969,22 @@ async function downloadAllAudio(fmt) {
 function parseUAssetMeta(buf) {
   const text = extractStr(new Uint8Array(buf));
   const m = { type:'Unknown', assetName:null, format:null };
-  const tm = [['SoundWave','SoundWave'],['SoundCue','SoundCue'],['DialogueWave','DialogueWave'],
-    ['DialogueVoice','DialogueVoice'],['SoundClass','SoundClass'],['SoundMix','SoundMix'],
-    ['SoundAttenuation','Attenuation'],['SoundConcurrency','Concurrency'],
-    ['AkAudioEvent','Wwise Event'],['AkMediaAsset','Wwise Media'],
-    ['DlgDialogue','DlgDialogue'],['DlgNode_Speech','DlgDialogue']];
-  for (const [k,t] of tm) if (text.includes(k)){m.type=t;break;}
+  // Most reliable: check Default__ClassName (only exists for the asset's own type, not imports)
+  const dm = [['Default__DlgDialogue','DlgDialogue'],['Default__DlgNode_Speech','DlgDialogue'],
+    ['Default__DialogueWave','DialogueWave'],['Default__AkAudioEvent','Wwise Event'],
+    ['Default__AkMediaAsset','Wwise Media'],['Default__AkAudioEventData','Wwise Event'],
+    ['Default__SoundWave','SoundWave'],['Default__SoundCue','SoundCue']];
+  for (const [k,t] of dm) if (text.includes(k)){m.type=t;break;}
+  // Fallback: class name matching (Dlg types first to avoid AkAudioEvent shadow)
+  if (m.type === 'Unknown') {
+    const tm = [['DlgDialogue','DlgDialogue'],['DlgNode_Speech','DlgDialogue'],
+      ['DialogueWave','DialogueWave'],['DialogueVoice','DialogueVoice'],
+      ['SoundWave','SoundWave'],['SoundCue','SoundCue'],
+      ['SoundClass','SoundClass'],['SoundMix','SoundMix'],
+      ['SoundAttenuation','Attenuation'],['SoundConcurrency','Concurrency'],
+      ['AkAudioEvent','Wwise Event'],['AkMediaAsset','Wwise Media']];
+    for (const [k,t] of tm) if (text.includes(k)){m.type=t;break;}
+  }
   if (/OGG\d+/.test(text)) m.format='OGG';
   if (/WAV|PCM/i.test(text)) m.format='WAV';
   const pm=text.match(/\/Game\/[^\/]+\/[^\x00]+/);
@@ -948,10 +999,278 @@ function extractStr(bytes, ml=4) {
 }
 
 function extractDlgText(bytes) {
-  const lines=[], seen=new Set(); let cur='';
-  for(let i=0;i<bytes.length;i++){const c=bytes[i];if(c>=32&&c<127)cur+=String.fromCharCode(c);else if((c===0x0D||c===0x0A)&&cur.length)cur+='\n';else{if(cur.length>=10){const t=cur.trim();if(t.length>=10&&!t.startsWith('{')&&!/^[0-9A-Fa-f]{32}$/.test(t)&&!/^Next$/m.test(t)&&t!=='None'&&!seen.has(t)){seen.add(t);lines.push(t);}}cur='';}}
-  if(cur.length>=10){const t=cur.trim();if(t.length>=10&&!t.startsWith('{')&&!/^[0-9A-Fa-f]{32}$/.test(t)&&!seen.has(t)){seen.add(t);lines.push(t);}}
+  const lines = [], seen = new Set();
+  // Pass 1: ASCII strings
+  let cur = '';
+  for (let i = 0; i < bytes.length; i++) {
+    const c = bytes[i];
+    if (c >= 32 && c < 127) cur += String.fromCharCode(c);
+    else { addDlgLine(cur, lines, seen); cur = ''; }
+  }
+  addDlgLine(cur, lines, seen);
+  // Pass 2: UTF-16LE strings (detect [printable][0x00] pairs)
+  cur = '';
+  for (let i = 0; i < bytes.length - 1; i++) {
+    const lo = bytes[i], hi = bytes[i + 1];
+    if (hi === 0 && lo >= 32 && lo < 127) { cur += String.fromCharCode(lo); i++; }
+    else { addDlgLine(cur, lines, seen); cur = ''; }
+  }
+  addDlgLine(cur, lines, seen);
   return lines;
+}
+function addDlgLine(raw, lines, seen) {
+  const t = raw.trim();
+  if (t.length < 10 || seen.has(t)) return;
+  if (!/\s/.test(t)) return;                     // natural language has spaces
+  if (/^[{\/]/.test(t)) return;                   // paths & context hashes
+  if (/Property$|^Default__|^None$|^Class$/i.test(t)) return;
+  if (/^[0-9A-Fa-f]{32}$/.test(t.replace(/\s/g, ''))) return;
+  seen.add(t); lines.push(t);
+}
+
+// ============================================================
+// Cross-Reference: Event→Media, Dialogue→Events
+// ============================================================
+function extractAssetRefs(buffer) {
+  const text = extractStr(new Uint8Array(buffer));
+  const refs = { events: [], media: [], character: null };
+  for (const line of text.split('\n')) {
+    const mm = line.match(/WwiseAudio\/(?:Localized\/[^\/]+\/)?Media\/(\d+)/);
+    if (mm) { const id = mm[1]; if (!refs.media.includes(id)) refs.media.push(id); }
+    const em = line.match(/WwiseAudio\/(?:Localized\/[^\/]+\/)?Events\/.*\/([A-Za-z_]\w+)/);
+    if (em) { const n = em[1]; if (n.length > 3 && !refs.events.includes(n)) refs.events.push(n); }
+    const cm = line.match(/Contact_UMC_(\w+)/);
+    if (cm && !refs.character) refs.character = cm[1];
+  }
+  return refs;
+}
+
+function buildCrossRef() {
+  crossRef = { eventToMedia: {}, mediaToEvent: {}, dialogueData: {}, mediaToDialogue: {}, assetByName: {} };
+  // Lookup map for all assets by name
+  for (const a of allAssets) crossRef.assetByName[a.name] = a;
+  // Pass 1: Event → Media mapping (from assets that reference media files)
+  for (const asset of allAssets) {
+    if (!asset.refs || !asset.refs.media.length) continue;
+    crossRef.eventToMedia[asset.name] = asset.refs.media;
+    for (const mid of asset.refs.media) {
+      if (!crossRef.mediaToEvent[mid]) crossRef.mediaToEvent[mid] = [];
+      if (!crossRef.mediaToEvent[mid].includes(asset.name)) crossRef.mediaToEvent[mid].push(asset.name);
+    }
+  }
+  // Pass 2: Dialogue data (from dialogue-type assets)
+  for (const asset of allAssets) {
+    if (!asset.refs) continue;
+    const isDlg = asset.meta.type.startsWith('Dlg') || asset.meta.type === 'DialogueWave';
+    if (!isDlg) continue;
+    const character = asset.refs.character || guessCharacter(asset.name);
+    crossRef.dialogueData[asset.name] = { character, events: asset.refs.events, text: asset.dlgLines, asset };
+  }
+  // Pass 3: Media → Dialogue mapping
+  for (const [, data] of Object.entries(crossRef.dialogueData)) {
+    for (const evtName of data.events) {
+      const mediaIds = crossRef.eventToMedia[evtName];
+      if (mediaIds) {
+        for (const mid of mediaIds) {
+          crossRef.mediaToDialogue[mid] = { dialogue: data.asset.name, event: evtName, character: data.character };
+        }
+      }
+    }
+  }
+}
+
+function guessCharacter(name) {
+  const s = name.replace(/^Dlg_?/, '');
+  const parts = s.split('_').filter(Boolean);
+  if (!parts.length) return name;
+  const skip = /^(?:FT|C\d+|M\d+|Intro|Wrap|Debrief|Final|Default|Copy|Dummy)$/i;
+  for (let i = parts.length - 1; i >= 0; i--) { if (!skip.test(parts[i])) return parts[i]; }
+  return parts[parts.length - 1];
+}
+
+function resolveMediaName(name) {
+  if (/^\d+$/.test(name) && crossRef.mediaToEvent[name] && crossRef.mediaToEvent[name].length) {
+    return crossRef.mediaToEvent[name][0];
+  }
+  return null;
+}
+
+// ============================================================
+// Dialogue Tree (alternative sidebar view)
+// ============================================================
+function renderDialogueTree() {
+  const frag = document.createDocumentFragment();
+  const byChar = {};
+  for (const [name, data] of Object.entries(crossRef.dialogueData)) {
+    const ch = data.character;
+    if (!byChar[ch]) byChar[ch] = [];
+    byChar[ch].push({ name, ...data });
+  }
+  const chars = Object.keys(byChar).sort();
+  for (const ch of chars) {
+    const dlgs = byChar[ch];
+    const group = document.createElement('div');
+    group.className = 'tree-folder';
+    const hdr = document.createElement('div');
+    hdr.className = 'tree-folder-header';
+    hdr.innerHTML = '<span class="chevron">▼</span> <span>👤</span> ' + esc(ch) +
+      ' <span style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);margin-left:auto">' + dlgs.length + '</span>';
+    const kids = document.createElement('div');
+    kids.className = 'tree-folder-children';
+    hdr.addEventListener('click', () => { hdr.classList.toggle('collapsed'); kids.classList.toggle('hidden'); });
+    dlgs.sort((a, b) => a.name.localeCompare(b.name));
+    for (const dlg of dlgs) {
+      const item = document.createElement('div');
+      item.className = 'tree-item';
+      item.style.paddingLeft = '20px';
+      const lineCount = dlg.text.length;
+      const evtCount = dlg.events.filter(e => crossRef.eventToMedia[e]).length;
+      item.innerHTML = '<span class="icon">💬</span>' +
+        '<span class="name" title="' + esc(dlg.name) + '">' + esc(dlg.name) + '</span>' +
+        (lineCount ? '<span class="type-badge tb-dlg">' + lineCount + ' lines</span>' : '') +
+        (evtCount ? '<span class="type-badge tb-audio">' + evtCount + ' audio</span>' : '');
+      item.addEventListener('click', () => {
+        treeContainer.querySelectorAll('.tree-item.active').forEach(e => e.classList.remove('active'));
+        item.classList.add('active');
+        selectDialogue(dlg);
+      });
+      kids.appendChild(item);
+    }
+    group.appendChild(hdr); group.appendChild(kids); frag.appendChild(group);
+  }
+  if (!chars.length) {
+    const empty = document.createElement('div');
+    empty.className = 'detail-empty'; empty.style.padding = '30px 16px';
+    empty.innerHTML = '<div class="de-icon">💬</div><p>No dialogue files found.<br>Drop the Dialogue folder to see dialogues.</p>';
+    frag.appendChild(empty);
+  }
+  return frag;
+}
+
+// ============================================================
+// Dialogue Detail Panel
+// ============================================================
+function selectDialogue(dlg) {
+  selectedAsset = dlg.asset;
+  if (activeBlobUrl) { URL.revokeObjectURL(activeBlobUrl); activeBlobUrl = null; }
+  detailPanel.style.display = '';
+  detailPanel.scrollTop = 0;
+
+  const resolvedEvts = dlg.events.filter(e => crossRef.eventToMedia[e]);
+  const unresolvedEvts = dlg.events.filter(e => !crossRef.eventToMedia[e]);
+
+  let html = '<div class="detail-header">' +
+    '<div class="detail-name">💬 ' + esc(dlg.name) + '</div>' +
+    '<div class="detail-path">Character: ' + esc(dlg.character) + '</div>' +
+    '<div class="detail-tags">' +
+      '<span class="meta-tag type-dlg">dialogue</span>' +
+      '<span class="meta-tag">' + esc(dlg.asset.meta.type) + '</span>' +
+    '</div></div>';
+
+  // Stats
+  html += '<div class="stats-bar">' +
+    '<div class="stat"><span class="stat-value">' + dlg.text.length + '</span><span class="stat-label">lines</span></div>' +
+    '<div class="stat"><span class="stat-value">' + dlg.events.length + '</span><span class="stat-label">events</span></div>' +
+    '<div class="stat"><span class="stat-value">' + resolvedEvts.length + '</span><span class="stat-label">linked audio</span></div>' +
+    '</div>';
+
+  // Dialogue text
+  if (dlg.text.length) {
+    html += '<div class="detail-section"><div class="detail-section-title">Dialogue Text (' + dlg.text.length + ' lines)</div>' +
+      '<div class="dialogue-lines">' + dlg.text.map(l => '<div class="dialogue-line">' + esc(l) + '</div>').join('') + '</div>' +
+      '<div style="margin-top:6px"><button class="btn btn-secondary copy-dlg-btn">📋 Copy All</button></div></div>';
+  }
+
+  // Associated audio
+  if (resolvedEvts.length) {
+    html += '<div class="detail-section"><div class="detail-section-title">Associated Audio (' + resolvedEvts.length + ' events)</div>';
+    for (let ei = 0; ei < resolvedEvts.length; ei++) {
+      const evtName = resolvedEvts[ei];
+      const mediaIds = crossRef.eventToMedia[evtName] || [];
+      html += '<div class="track-row"><div class="track-meta">' +
+        '<span class="meta-tag type-ogg" style="font-size:11px">' + esc(evtName) + '</span></div>';
+      for (const mid of mediaIds) {
+        const ma = crossRef.assetByName[mid];
+        if (ma && ma.tracks.length) {
+          for (let ti = 0; ti < ma.tracks.length; ti++) {
+            const tr = ma.tracks[ti];
+            const sizeKB = ((tr.end - tr.off) / 1024).toFixed(1);
+            const tcls = tr.type==='ogg'?'type-ogg':tr.type==='wav'?'type-wav':'type-wem';
+            html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0 4px 12px">';
+            html += '<span class="meta-tag ' + tcls + '">' + esc(tr.format) + '</span>';
+            html += '<span class="meta-tag">' + sizeKB + ' KB</span>';
+            if (tr.ch) html += '<span class="meta-tag">' + tr.ch + 'ch</span>';
+            if (tr.sr) html += '<span class="meta-tag">' + tr.sr + ' Hz</span>';
+            if (tr.playable) {
+              html += '<div class="track-player" id="dlgtp' + ei + '_' + mid + '_' + ti + '" style="flex:1;min-width:120px"></div>';
+              html += '<button class="btn btn-primary dlg-play-btn" data-mid="' + esc(mid) + '" data-tidx="' + ti + '" data-tpid="dlgtp' + ei + '_' + mid + '_' + ti + '" style="padding:3px 8px;font-size:11px">▶ Play</button>';
+              html += '<button class="btn btn-secondary dlg-dl-btn" data-mid="' + esc(mid) + '" data-tidx="' + ti + '" data-ext="' + (tr.type==='ogg'?'.ogg':'.wav') + '" style="padding:3px 8px;font-size:11px">💾</button>';
+            } else {
+              html += '<div class="wwise-notice" style="flex:1;padding:4px 8px;font-size:11px">⚠️ ' + esc(tr.format) + '</div>';
+              html += '<button class="btn btn-secondary dlg-dl-btn" data-mid="' + esc(mid) + '" data-tidx="' + ti + '" data-ext=".wem" style="padding:3px 8px;font-size:11px">💾 WEM</button>';
+            }
+            html += '</div>';
+          }
+        } else {
+          html += '<div style="margin:4px 0 4px 12px;font-size:11px;color:var(--text-dim)">Media ' + esc(mid) + ' — not loaded</div>';
+        }
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+
+  // Unresolved events
+  if (unresolvedEvts.length) {
+    html += '<div class="detail-section"><div class="detail-section-title">Unresolved Events (' + unresolvedEvts.length + ')</div>' +
+      '<div style="font-size:11px;color:var(--text-dim);font-family:var(--font-mono)">' +
+      unresolvedEvts.map(e => '<div style="padding:2px 0">' + esc(e) + '</div>').join('') +
+      '</div><div style="margin-top:6px;font-size:11px;color:var(--text-dim)">Load the WwiseAudio/Localized/ folder to resolve these events to audio files.</div></div>';
+  }
+
+  detailPanel.innerHTML = html;
+  detailPanel.onclick = onDlgDetailClick;
+}
+
+function onDlgDetailClick(e) {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  if (btn.classList.contains('dlg-play-btn')) {
+    const mid = btn.dataset.mid, tidx = +btn.dataset.tidx, tpid = btn.dataset.tpid;
+    const ma = crossRef.assetByName[mid];
+    if (!ma) return;
+    const tr = ma.tracks[tidx];
+    if (!tr) return;
+    const container = $(tpid);
+    if (!container) return;
+    if (!container.querySelector('audio')) {
+      const blob = materializeBlob(ma, tr);
+      if (!blob) return;
+      if (activeBlobUrl) URL.revokeObjectURL(activeBlobUrl);
+      activeBlobUrl = URL.createObjectURL(blob);
+      container.innerHTML = '<audio controls autoplay style="width:100%;height:32px;border-radius:6px;outline:none" src="' + activeBlobUrl + '"></audio>';
+      btn.textContent = '⏸ Pause';
+    } else {
+      const audio = container.querySelector('audio');
+      if (audio.paused) { audio.play(); btn.textContent = '⏸ Pause'; }
+      else { audio.pause(); btn.textContent = '▶ Play'; }
+    }
+  } else if (btn.classList.contains('dlg-dl-btn')) {
+    const mid = btn.dataset.mid, tidx = +btn.dataset.tidx, ext = btn.dataset.ext;
+    const ma = crossRef.assetByName[mid];
+    if (!ma) return;
+    const tr = ma.tracks[tidx];
+    if (!tr) return;
+    const blob = materializeBlob(ma, tr);
+    if (blob) downloadBlob(resolveMediaName(mid) || mid, blob, ext, tidx);
+  } else if (btn.classList.contains('copy-dlg-btn')) {
+    const dlg = Object.values(crossRef.dialogueData).find(d => d.asset === selectedAsset);
+    if (dlg) {
+      navigator.clipboard.writeText(dlg.text.join('\n\n'));
+      btn.textContent = '✓ Copied!';
+      setTimeout(() => { btn.textContent = '📋 Copy All'; }, 1200);
+    }
+  }
 }
 
 function findSig(b,s,f){const l=s.length,e=b.length-l;for(let i=f;i<=e;i++)if(b[i]===s[0]&&b[i+1]===s[1]&&b[i+2]===s[2]&&b[i+3]===s[3])return i;return-1;}
@@ -970,6 +1289,8 @@ function hideStatus(){const s=$('statusText');if(s)s.style.display='none';}
 function resetUI() {
   if (activeBlobUrl) { URL.revokeObjectURL(activeBlobUrl); activeBlobUrl=null; }
   allAssets=[]; fileTree={}; selectedAsset=null; currentFilter='all'; treeItemEls=[];
+  crossRef = { eventToMedia:{}, mediaToEvent:{}, dialogueData:{}, mediaToDialogue:{}, assetByName:{} };
+  fileTreeFrag = null;
   detailPanel.style.display='none'; detailPanel.innerHTML='';
   // Restore dropzone
   dropzoneWrapper.classList.remove('collapsed');
