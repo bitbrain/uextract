@@ -1053,8 +1053,25 @@ function buildCrossRef() {
   for (const asset of allAssets) {
     if (!asset.refs || !asset.refs.media.length) continue;
     crossRef.eventToMedia[asset.name] = asset.refs.media;
+    // Also index by the actual Wwise event names found inside the asset,
+    // since the package filename often differs from the event name
+    // (e.g. file "Play_VO_HUB_C1_HERRERA_10_11" contains event "Play_VO_HUB_C1_HERRERA_10")
+    for (const evtName of (asset.refs.events || [])) {
+      if (!crossRef.eventToMedia[evtName]) {
+        crossRef.eventToMedia[evtName] = [];
+      }
+      for (const mid of asset.refs.media) {
+        if (!crossRef.eventToMedia[evtName].includes(mid)) {
+          crossRef.eventToMedia[evtName].push(mid);
+        }
+      }
+    }
     for (const mid of asset.refs.media) {
       if (!crossRef.mediaToEvent[mid]) crossRef.mediaToEvent[mid] = [];
+      // Add actual event names first for better display in resolveMediaName
+      for (const evtName of (asset.refs.events || [])) {
+        if (!crossRef.mediaToEvent[mid].includes(evtName)) crossRef.mediaToEvent[mid].push(evtName);
+      }
       if (!crossRef.mediaToEvent[mid].includes(asset.name)) crossRef.mediaToEvent[mid].push(asset.name);
     }
   }
