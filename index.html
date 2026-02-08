@@ -80,8 +80,8 @@
     }
     .filter-pills { display: flex; gap: 2px; flex-wrap: wrap; }
     .filter-pill {
-      font-family: var(--font-sans); font-size: 11px; font-weight: 600;
-      padding: 3px 8px; border-radius: 6px; cursor: pointer;
+      font-family: var(--font-sans); font-size: 12px; font-weight: 600;
+      padding: 6px 12px; border-radius: 8px; cursor: pointer;
       background: transparent; color: var(--text-dim);
       border: 1px solid transparent; transition: background 0.1s, color 0.1s;
     }
@@ -93,11 +93,31 @@
     }
     .filter-pill.active .pill-count { color: var(--accent); }
 
+    /* ── Search ── */
+    .search-input {
+      flex: 1; min-width: 0;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 12px;
+      font-family: var(--font-sans); font-size: 13px;
+      color: var(--text); outline: none;
+      transition: border-color 0.15s;
+    }
+    .search-input::placeholder { color: var(--text-dim); }
+    .search-input:focus { border-color: var(--ue-blue); }
+    .search-clear {
+      background: none; border: none; color: var(--text-dim);
+      cursor: pointer; font-size: 18px; padding: 6px 8px;
+      line-height: 1; border-radius: 6px;
+      transition: color 0.1s, background 0.1s;
+    }
+    .search-clear:hover { color: var(--text); background: var(--bg-hover); }
+
     /* ── Tree ── */
-    .tree-container { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 2px 0; }
-    .tree-container::-webkit-scrollbar { width: 6px; }
+    .tree-container { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 2px 0; scrollbar-width: auto; scrollbar-color: var(--border) transparent; }
+    .tree-container::-webkit-scrollbar { width: 14px; }
     .tree-container::-webkit-scrollbar-track { background: transparent; }
-    .tree-container::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .tree-container::-webkit-scrollbar-thumb { background: var(--border); border-radius: 7px; min-height: 40px; }
+    .tree-container::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
 
     .tree-item {
       display: flex; align-items: center;
@@ -196,10 +216,12 @@
     /* ── Detail panel ── */
     .detail-panel {
       flex: 1; overflow-y: auto; padding: 12px;
+      scrollbar-width: auto; scrollbar-color: var(--border) transparent;
     }
-    .detail-panel::-webkit-scrollbar { width: 6px; }
+    .detail-panel::-webkit-scrollbar { width: 14px; }
     .detail-panel::-webkit-scrollbar-track { background: transparent; }
-    .detail-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .detail-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 7px; min-height: 40px; }
+    .detail-panel::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
 
     .detail-empty {
       display: flex; flex-direction: column;
@@ -246,9 +268,11 @@
       max-height: 240px; overflow-y: auto;
       background: var(--bg-hover); border-radius: 6px;
       padding: 8px 10px; border: 1px solid var(--border);
+      scrollbar-width: auto; scrollbar-color: var(--border) transparent;
     }
-    .dialogue-lines::-webkit-scrollbar { width: 5px; }
-    .dialogue-lines::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .dialogue-lines::-webkit-scrollbar { width: 14px; }
+    .dialogue-lines::-webkit-scrollbar-thumb { background: var(--border); border-radius: 7px; }
+    .dialogue-lines::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
     .dialogue-line {
       padding: 4px 0; font-size: 13px; line-height: 1.5;
       color: var(--text-muted); border-bottom: 1px solid rgba(58,52,80,0.5);
@@ -274,11 +298,12 @@
 
     /* ── Buttons ── */
     .btn {
-      display: inline-flex; align-items: center; gap: 4px;
-      padding: 6px 10px; border-radius: 6px;
-      font-family: var(--font-sans); font-size: 12px; font-weight: 600;
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 14px; border-radius: 8px;
+      font-family: var(--font-sans); font-size: 13px; font-weight: 600;
       cursor: pointer; border: 1px solid transparent;
       transition: background 0.1s, border-color 0.1s;
+      min-height: 36px;
     }
     .btn-primary { background: var(--accent); color: var(--bg-deep); }
     .btn-primary:hover { background: #ff5c9a; }
@@ -313,9 +338,11 @@
     .staged-list {
       text-align: left; max-height: 140px; overflow-y: auto;
       margin: 8px auto; max-width: 340px;
+      scrollbar-width: auto; scrollbar-color: var(--border) transparent;
     }
-    .staged-list::-webkit-scrollbar { width: 5px; }
-    .staged-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .staged-list::-webkit-scrollbar { width: 14px; }
+    .staged-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 7px; }
+    .staged-list::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
     .staged-folder {
       display: flex; align-items: center; gap: 6px;
       padding: 5px 8px; font-size: 12px; color: var(--text-muted);
@@ -355,6 +382,10 @@
       <div class="sidebar-toolbar-row">
         <span style="font-size:13px;font-weight:700;color:var(--text-muted)">Files</span>
         <span class="file-count" id="fileCount">0</span>
+      </div>
+      <div class="sidebar-toolbar-row" id="searchRow" style="display:none">
+        <input type="text" class="search-input" id="searchInput" placeholder="Search files..." />
+        <button class="search-clear" id="searchClear" title="Clear search" style="display:none">✕</button>
       </div>
       <div class="filter-pills" id="filterPills" style="display:none">
         <button class="filter-pill active" data-filter="all">All</button>
@@ -457,6 +488,19 @@ filterPills.addEventListener('click', e => {
   applyFilter();
 });
 
+$('searchInput').addEventListener('input', e => {
+  const clear = $('searchClear');
+  if (clear) clear.style.display = e.target.value ? '' : 'none';
+  applyFilter();
+});
+$('searchClear').addEventListener('click', () => {
+  const si = $('searchInput');
+  if (si) { si.value = ''; si.focus(); }
+  const clear = $('searchClear');
+  if (clear) clear.style.display = 'none';
+  applyFilter();
+});
+
 async function handleDrop(e) {
   e.preventDefault();
   const dz = $('dropzone');
@@ -506,58 +550,15 @@ async function walkTree(entry, files, path = '') {
 function onDropzoneClick(e) {
   const btn = e.target.closest('button');
   if (btn) {
-    if (btn.id === 'addMoreBtn') pickFolder();
+    if (btn.id === 'addMoreBtn') { const fi = $('fileInput'); if (fi) fi.click(); }
     else if (btn.id === 'importAllBtn') importStaged();
     else if (btn.classList.contains('remove-staged')) removeStaged(+btn.dataset.idx);
     return;
   }
-  if (!isStaging) pickFolder();
-}
-
-async function pickFolder() {
-  // Try modern File System Access API (non-blocking, no freeze for large folders)
-  if (window.showDirectoryPicker) {
-    try {
-      const dirHandle = await window.showDirectoryPicker({ mode: 'read' });
-      const files = [];
-      const entry = { name: dirHandle.name, files: files };
-      stagedEntries.push(entry);
-      isStaging = true;
-      stagingBusy++;
-      renderStagingUI();
-      await walkDirHandle(dirHandle, '', files);
-      stagingBusy--;
-      updateImportBtn();
-      return;
-    } catch (e) {
-      if (e.name === 'AbortError') return; // user cancelled picker
-      // Fall through to legacy picker on other errors
-    }
-  }
-  // Fallback: legacy file input (may freeze briefly for very large folders)
-  const fi = $('fileInput');
-  if (fi) fi.click();
-}
-
-async function walkDirHandle(handle, path, files) {
-  try {
-    for await (const entry of handle.values()) {
-      try {
-        if (entry.kind === 'file') {
-          const file = await entry.getFile();
-          file.relativePath = path + file.name;
-          files.push(file);
-          if (files.length % 200 === 0) { updateImportBtn(); await yieldToMain(); }
-        } else if (entry.kind === 'directory') {
-          await walkDirHandle(entry, path + entry.name + '/', files);
-        }
-      } catch (_) { /* skip unreadable entries */ }
-    }
-  } catch (_) { /* skip unreadable directories */ }
+  if (!isStaging) { const fi = $('fileInput'); if (fi) fi.click(); }
 }
 
 function stageFolder(fileList) {
-  // Legacy path: called from <input webkitdirectory> change event
   if (!fileList || !fileList.length) return;
   const firstPath = fileList[0].webkitRelativePath || fileList[0].relativePath || fileList[0].name;
   const folderName = firstPath.split('/')[0] || 'Selected files';
@@ -566,7 +567,7 @@ function stageFolder(fileList) {
   isStaging = true;
   stagingBusy++;
   renderStagingUI();
-  // Capture file array asynchronously so the folder appears in the list instantly
+  // Capture files asynchronously so the folder appears in the list instantly
   const fl = fileList;
   setTimeout(() => {
     entry.files = Array.from(fl);
@@ -604,9 +605,7 @@ function updateImportBtn() {
   if (!btn) return;
   if (stagingBusy > 0) {
     btn.disabled = true;
-    const sofar = stagedEntries.reduce((s, e) => s + (e.files ? e.files.length : 0), 0);
-    btn.innerHTML = '<span class="spinner" style="width:12px;height:12px;border-width:2px;vertical-align:middle"></span> ' +
-      (sofar > 0 ? sofar.toLocaleString() + ' files scanned\u2026' : 'Preparing\u2026');
+    btn.innerHTML = '<span class="spinner" style="width:12px;height:12px;border-width:2px;vertical-align:middle"></span> Preparing\u2026';
   } else {
     const total = stagedEntries.reduce((s, e) => s + (e.files ? e.files.length : 0), 0);
     btn.disabled = false;
@@ -717,6 +716,7 @@ async function processFiles(fileList) {
   $('cntWwise').textContent = counts.wwise;
   $('cntData').textContent = counts.data;
   filterPills.style.display = '';
+  $('searchRow').style.display = '';
 
   const hasPlayable = counts.audio > 0;
   downloadAllOggBtn.disabled = !hasPlayable;
@@ -1257,6 +1257,7 @@ function renderNode(node, container, depth) {
 }
 
 function applyFilter() {
+  const searchTerm = ($('searchInput')?.value || '').toLowerCase().trim();
   // Dialogue filter: switch to dialogue tree view
   if (currentFilter === 'dialogue' && Object.keys(crossRef.dialogueData).length > 0) {
     if (!fileTreeFrag) {
@@ -1264,7 +1265,7 @@ function applyFilter() {
       while (treeContainer.firstChild) fileTreeFrag.appendChild(treeContainer.firstChild);
     }
     treeContainer.innerHTML = '';
-    treeContainer.appendChild(renderDialogueTree());
+    treeContainer.appendChild(renderDialogueTree(searchTerm));
     return;
   }
   // Restore file tree if coming from dialogue view
@@ -1274,8 +1275,13 @@ function applyFilter() {
     fileTreeFrag = null;
   }
   for (const el of treeItemEls) {
-    const show = currentFilter === 'all' || el._tags.has(currentFilter);
-    el.classList.toggle('filtered-out', !show);
+    const matchFilter = currentFilter === 'all' || el._tags.has(currentFilter);
+    const matchSearch = !searchTerm || (el._asset && (
+      el._asset.name.toLowerCase().includes(searchTerm) ||
+      (resolveMediaName(el._asset.name) || '').toLowerCase().includes(searchTerm) ||
+      el._asset.path.toLowerCase().includes(searchTerm)
+    ));
+    el.classList.toggle('filtered-out', !(matchFilter && matchSearch));
   }
   // Hide empty folders – process bottom-up so inner empties are hidden before parents check
   const folders = Array.from(treeContainer.querySelectorAll('.tree-folder')).reverse();
@@ -1285,6 +1291,10 @@ function applyFilter() {
     const hasVisible = kids.querySelector('.tree-item:not(.filtered-out), .tree-folder:not(.filtered-out)');
     folder.classList.toggle('filtered-out', !hasVisible);
   }
+  // Update visible count
+  const visibleCount = treeItemEls.filter(el => !el.classList.contains('filtered-out')).length;
+  const total = treeItemEls.length;
+  fileCountEl.textContent = (searchTerm || currentFilter !== 'all') ? visibleCount + ' / ' + total : total;
 }
 
 // ============================================================
@@ -1398,19 +1408,19 @@ async function onDetailClick(e) {
     const ext = btn.dataset.ext;
     const tr = selectedAsset.tracks[idx];
     const blob = await materializeBlob(selectedAsset, tr);
-    if (blob) downloadBlob(selectedAsset.name, blob, ext, idx);
+    if (blob) downloadBlob(getDownloadName(selectedAsset), blob, ext, idx);
   }
 
   else if (btn.classList.contains('dlogg-btn')) {
     const idx = +btn.dataset.idx;
     const tr = selectedAsset.tracks[idx];
-    handleOggDl(btn, selectedAsset.name, selectedAsset, tr, idx);
+    handleOggDl(btn, getDownloadName(selectedAsset), selectedAsset, tr, idx);
   }
 
   else if (btn.classList.contains('dlwav-btn')) {
     const idx = +btn.dataset.idx;
     const tr = selectedAsset.tracks[idx];
-    handleWavDl(btn, selectedAsset.name, selectedAsset, tr, idx);
+    handleWavDl(btn, getDownloadName(selectedAsset), selectedAsset, tr, idx);
   }
 
   else if (btn.classList.contains('copy-dlg-btn')) {
@@ -1523,14 +1533,15 @@ async function downloadAllAudio(fmt) {
   for (let i=0;i<tracks.length;i++) {
     btn.innerHTML = '<span class="spinner" style="width:12px;height:12px;border-width:2px"></span> '+(i+1)+'/'+tracks.length;
     const t=tracks[i];
+    const dlName = getDownloadName(t.asset);
     if (fmt==='wav') {
-      try { await handleWavDl(btn, t.asset.name, t.asset, t.track, t.idx); } catch(e) {}
+      try { await handleWavDl(btn, dlName, t.asset, t.track, t.idx); } catch(e) {}
     } else {
       // OGG: materialize and download as OGG where possible, WAV otherwise
       const blob = await materializeBlob(t.asset, t.track);
       if (!blob) continue;
-      if (blob.type === 'audio/ogg') downloadBlob(t.asset.name, blob, '.ogg', t.idx);
-      else downloadBlob(t.asset.name, blob, '.wav', t.idx);
+      if (blob.type === 'audio/ogg') downloadBlob(dlName, blob, '.ogg', t.idx);
+      else downloadBlob(dlName, blob, '.wav', t.idx);
     }
     await new Promise(r=>setTimeout(r, 120));
   }
@@ -1686,10 +1697,28 @@ function resolveMediaName(name) {
   return null;
 }
 
+function getDownloadName(asset) {
+  const name = asset.name;
+  // Resolve the event name from cross-reference or the asset's own refs
+  let eventName = resolveMediaName(name);
+  if (!eventName && asset.refs && asset.refs.events && asset.refs.events.length) {
+    eventName = asset.refs.events[0];
+  }
+  // Check dialogue cross-reference — prefix dialogue name if available
+  const dlgInfo = crossRef.mediaToDialogue[name];
+  if (dlgInfo && dlgInfo.dialogue) {
+    const base = eventName || name;
+    // Avoid duplicating if dialogue name is already part of the event name
+    if (base.includes(dlgInfo.dialogue)) return base;
+    return dlgInfo.dialogue + '__' + base;
+  }
+  return eventName || name;
+}
+
 // ============================================================
 // Dialogue Tree (alternative sidebar view)
 // ============================================================
-function renderDialogueTree() {
+function renderDialogueTree(searchTerm) {
   const frag = document.createDocumentFragment();
   const byChar = {};
   for (const [name, data] of Object.entries(crossRef.dialogueData)) {
@@ -1700,17 +1729,23 @@ function renderDialogueTree() {
   const chars = Object.keys(byChar).sort();
   for (const ch of chars) {
     const dlgs = byChar[ch];
+    dlgs.sort((a, b) => a.name.localeCompare(b.name));
+    const filtered = searchTerm ? dlgs.filter(d =>
+      d.name.toLowerCase().includes(searchTerm) ||
+      ch.toLowerCase().includes(searchTerm) ||
+      d.text.some(t => t.toLowerCase().includes(searchTerm))
+    ) : dlgs;
+    if (!filtered.length) continue;
     const group = document.createElement('div');
     group.className = 'tree-folder';
     const hdr = document.createElement('div');
     hdr.className = 'tree-folder-header';
     hdr.innerHTML = '<span class="chevron">▼</span> <span>👤</span> ' + esc(ch) +
-      ' <span style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);margin-left:auto">' + dlgs.length + '</span>';
+      ' <span style="font-family:var(--font-mono);font-size:10px;color:var(--text-dim);margin-left:auto">' + filtered.length + '</span>';
     const kids = document.createElement('div');
     kids.className = 'tree-folder-children';
     hdr.addEventListener('click', () => { hdr.classList.toggle('collapsed'); kids.classList.toggle('hidden'); });
-    dlgs.sort((a, b) => a.name.localeCompare(b.name));
-    for (const dlg of dlgs) {
+    for (const dlg of filtered) {
       const item = document.createElement('div');
       item.className = 'tree-item';
       item.style.paddingLeft = '20px';
@@ -1854,21 +1889,21 @@ async function onDlgDetailClick(e) {
     const tr = ma.tracks[tidx];
     if (!tr) return;
     const blob = await materializeBlob(ma, tr);
-    if (blob) downloadBlob(resolveMediaName(mid) || mid, blob, ext, tidx);
+    if (blob) downloadBlob(getDownloadName(ma), blob, ext, tidx);
   } else if (btn.classList.contains('dlg-dlogg-btn')) {
     const mid = btn.dataset.mid, tidx = +btn.dataset.tidx;
     const ma = crossRef.assetByName[mid];
     if (!ma) return;
     const tr = ma.tracks[tidx];
     if (!tr) return;
-    handleOggDl(btn, resolveMediaName(mid) || mid, ma, tr, tidx);
+    handleOggDl(btn, getDownloadName(ma), ma, tr, tidx);
   } else if (btn.classList.contains('dlg-dlwav-btn')) {
     const mid = btn.dataset.mid, tidx = +btn.dataset.tidx;
     const ma = crossRef.assetByName[mid];
     if (!ma) return;
     const tr = ma.tracks[tidx];
     if (!tr) return;
-    handleWavDl(btn, resolveMediaName(mid) || mid, ma, tr, tidx);
+    handleWavDl(btn, getDownloadName(ma), ma, tr, tidx);
   } else if (btn.classList.contains('copy-dlg-btn')) {
     const dlg = Object.values(crossRef.dialogueData).find(d => d.asset === selectedAsset);
     if (dlg) {
@@ -1921,6 +1956,9 @@ function resetUI() {
 
   treeContainer.innerHTML = '<div class="detail-empty" style="padding:30px 16px"><div class="de-icon">🎮</div><p>Drop files to browse</p></div>';
   fileCountEl.textContent = '0';
+  const _si = $('searchInput'); if (_si) _si.value = '';
+  const _sc = $('searchClear'); if (_sc) _sc.style.display = 'none';
+  $('searchRow').style.display = 'none';
   filterPills.style.display = 'none';
   filterPills.querySelector('.active')?.classList.remove('active');
   filterPills.querySelector('[data-filter="all"]').classList.add('active');
