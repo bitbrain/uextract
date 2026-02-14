@@ -1657,7 +1657,9 @@ function buildCrossRef() {
       for (const evtName of (asset.refs.events || [])) {
         if (!crossRef.mediaToEvent[mid].includes(evtName)) crossRef.mediaToEvent[mid].push(evtName);
       }
-      if (!crossRef.mediaToEvent[mid].includes(asset.name)) crossRef.mediaToEvent[mid].push(asset.name);
+      // Don't add numeric asset names (e.g. audio package named by media ID) as display name
+      if (!/^\d+$/.test(asset.name) && !crossRef.mediaToEvent[mid].includes(asset.name))
+        crossRef.mediaToEvent[mid].push(asset.name);
     }
   }
   // Pass 2: Dialogue data (from dialogue-type assets)
@@ -1691,8 +1693,12 @@ function guessCharacter(name) {
 }
 
 function resolveMediaName(name) {
-  if (/^\d+$/.test(name) && crossRef.mediaToEvent[name] && crossRef.mediaToEvent[name].length) {
-    return crossRef.mediaToEvent[name][0];
+  if (!/^\d+$/.test(name) || !crossRef.mediaToEvent[name] || !crossRef.mediaToEvent[name].length)
+    return null;
+  // Prefer first non-numeric entry (event name) so we don't "resolve" to the same media ID
+  const arr = crossRef.mediaToEvent[name];
+  for (let i = 0; i < arr.length; i++) {
+    if (!/^\d+$/.test(arr[i])) return arr[i];
   }
   return null;
 }
