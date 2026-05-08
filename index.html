@@ -805,8 +805,11 @@ async function materializeBlob(asset, track, raw) {
     return convertWwisePcm(slice, track.ch, track.sr, track.bps);
   }
   if (!raw && track.code === FMT_VORBIS) {
+    // Wwise Vorbis must be transmuxed into a real Ogg stream before it's playable.
+    // If the converter can't handle this variant, refuse rather than mislabeling
+    // raw WEM bytes as audio/ogg (which produces a broken ".ogg" download).
     const ogg = await convertWemToOgg(slice);
-    if (ogg) return ogg;
+    return ogg || null;
   }
   const mime = track.type==='ogg'?'audio/ogg': track.type==='wav'?'audio/wav':'application/octet-stream';
   return new Blob([slice], { type: mime });
@@ -1414,13 +1417,13 @@ async function onDetailClick(e) {
   else if (btn.classList.contains('dlogg-btn')) {
     const idx = +btn.dataset.idx;
     const tr = selectedAsset.tracks[idx];
-    handleOggDl(btn, getDownloadName(selectedAsset), selectedAsset, tr, idx);
+    handleOggDl(btn, getDownloadName(selectedAsset), selectedAsset, tr, idx).catch(() => {});
   }
 
   else if (btn.classList.contains('dlwav-btn')) {
     const idx = +btn.dataset.idx;
     const tr = selectedAsset.tracks[idx];
-    handleWavDl(btn, getDownloadName(selectedAsset), selectedAsset, tr, idx);
+    handleWavDl(btn, getDownloadName(selectedAsset), selectedAsset, tr, idx).catch(() => {});
   }
 
   else if (btn.classList.contains('copy-dlg-btn')) {
@@ -1442,52 +1445,89 @@ function downloadBlob(name, blob, ext, idx) {
   const fn = sanitize(name) + (idx > 0 ? '_'+(idx+1) : '') + ext;
   const a = document.createElement('a');
   const u = URL.createObjectURL(blob);
-  a.href = u; a.download = fn; a.click();
-  URL.revokeObjectURL(u);
+  a.href = u; a.download = fn; a.rel = 'noopener';
+  // Some browsers (Firefox, sandboxed configs) require the anchor to be in the DOM.
+  // Delaying revokeObjectURL avoids a race that aborts downloads in rapid sequences.
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(u), 1500);
 }
 
-async function handleWavDl(btn, name, asset, track, idx) {
-  btn.disabled = true; btn.innerHTML = '<span class="spinner" style="width:12px;height:12px;border-width:2px"></span>';
-  try {
-    const blob = await materializeBlob(asset, track);
-    if (!blob) throw new Error('No data');
-    if (track.type === 'wav') { downloadBlob(name, blob, '.wav', idx); }
-    else {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const ab = await blob.arrayBuffer();
-      const dec = await ctx.decodeAudioData(ab);
-      downloadBlob(name, abToWav(dec), '.wav', idx);
-      ctx.close();
-    }
-  } catch (err) { alert('WAV conversion failed.'); }
-  btn.disabled = false; btn.textContent = '💾 WAV';
+function setBtnBusy(btn, busy, label) {
+  if (!btn) return;
+  if (busy) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner" style="width:12px;height:12px;border-width:2px"></span>';
+  } else {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
 }
 
-async function handleOggDl(btn, name, asset, track, idx) {
-  btn.disabled = true; btn.innerHTML = '<span class="spinner" style="width:12px;height:12px;border-width:2px"></span>';
+async function handleWavDl(btn, name, asset, track, idx, opts) {
+  const silent = opts && opts.silent;
+  setBtnBusy(btn, true);
   try {
     const blob = await materializeBlob(asset, track);
-    if (!blob) throw new Error('No data');
-    if (blob.type === 'audio/ogg') {
-      downloadBlob(name, blob, '.ogg', idx);
+    if (!blob) throw new Error('Conversion not supported for this Wwise variant. Use the .wem download.');
+    if (track.type === 'wav' || blob.type === 'audio/wav') {
+      downloadBlob(name, blob, '.wav', idx);
     } else {
-      // WAV track – try converting to OGG via MediaRecorder, fall back to WAV decode→OGG
-      const oggBlob = await wavToOgg(blob);
-      if (oggBlob) downloadBlob(name, oggBlob, '.ogg', idx);
-      else {
-        // Fallback: decode and re-encode as WAV (browser doesn't support OGG encoding)
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      try {
         const ab = await blob.arrayBuffer();
         const dec = await ctx.decodeAudioData(ab);
         downloadBlob(name, abToWav(dec), '.wav', idx);
-        ctx.close();
+      } finally { ctx.close(); }
+    }
+  } catch (err) {
+    console.error('WAV download failed:', err);
+    if (!silent) alert('WAV conversion failed: ' + (err && err.message ? err.message : err));
+    throw err;
+  } finally {
+    setBtnBusy(btn, false, '💾 WAV');
+  }
+}
+
+async function handleOggDl(btn, name, asset, track, idx, opts) {
+  const silent = opts && opts.silent;
+  setBtnBusy(btn, true);
+  try {
+    const blob = await materializeBlob(asset, track);
+    if (!blob) throw new Error('Conversion not supported for this Wwise Vorbis variant. Use the .wem download.');
+    if (blob.type === 'audio/ogg') {
+      downloadBlob(name, blob, '.ogg', idx);
+    } else {
+      // WAV-source track – try MediaRecorder OGG/Opus encoding.
+      const oggBlob = await wavToOgg(blob);
+      if (oggBlob) {
+        downloadBlob(name, oggBlob, '.ogg', idx);
+      } else {
+        // Browser can't encode OGG (e.g. Safari). Don't silently mislabel as .ogg —
+        // ask the user instead so the file extension matches the actual container.
+        const accept = silent ? true : confirm('Your browser cannot encode OGG. Download as WAV instead?');
+        if (accept) {
+          const ctx = new (window.AudioContext || window.webkitAudioContext)();
+          try {
+            const ab = await blob.arrayBuffer();
+            const dec = await ctx.decodeAudioData(ab);
+            downloadBlob(name, abToWav(dec), '.wav', idx);
+          } finally { ctx.close(); }
+        }
       }
     }
-  } catch (err) { alert('OGG conversion failed.'); }
-  btn.disabled = false; btn.textContent = '💾 OGG';
+  } catch (err) {
+    console.error('OGG download failed:', err);
+    if (!silent) alert('OGG conversion failed: ' + (err && err.message ? err.message : err));
+    throw err;
+  } finally {
+    setBtnBusy(btn, false, '💾 OGG');
+  }
 }
 
 async function wavToOgg(wavBlob) {
+  if (typeof MediaRecorder === 'undefined') return null;
   const mime = MediaRecorder.isTypeSupported('audio/ogg; codecs=opus') ? 'audio/ogg; codecs=opus' :
                MediaRecorder.isTypeSupported('audio/ogg') ? 'audio/ogg' : null;
   if (!mime) return null;
@@ -1500,13 +1540,29 @@ async function wavToOgg(wavBlob) {
     src.buffer = audioBuf;
     src.connect(dest);
     return await new Promise(resolve => {
-      const rec = new MediaRecorder(dest.stream, { mimeType: mime });
+      let settled = false;
+      const finish = (val) => { if (settled) return; settled = true; resolve(val); };
+      let rec;
+      try { rec = new MediaRecorder(dest.stream, { mimeType: mime }); }
+      catch (e) { return finish(null); }
       const chunks = [];
-      rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
-      rec.onstop = () => resolve(new Blob(chunks, { type: 'audio/ogg' }));
-      rec.start();
-      src.start();
-      src.onended = () => setTimeout(() => rec.stop(), 100);
+      rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+      rec.onerror = () => finish(null);
+      rec.onstop = () => finish(chunks.length ? new Blob(chunks, { type: 'audio/ogg' }) : null);
+      // Hard timeout: cap at 2x audio length + 5s so a stuck recorder can never hang the UI.
+      const cap = Math.max(5000, Math.ceil(audioBuf.duration * 2000) + 5000);
+      const watchdog = setTimeout(() => { try { rec.stop(); } catch (_) {} finish(null); }, cap);
+      try {
+        rec.start(250);
+        src.start();
+      } catch (e) { clearTimeout(watchdog); return finish(null); }
+      src.onended = () => {
+        // Give the encoder a tick to flush the tail before stopping.
+        setTimeout(() => {
+          clearTimeout(watchdog);
+          try { rec.requestData(); rec.stop(); } catch (_) { finish(null); }
+        }, 250);
+      };
     });
   } catch (e) { return null; }
   finally { ctx.close(); }
@@ -1530,22 +1586,25 @@ async function downloadAllAudio(fmt) {
   const orig = btn.innerHTML; btn.disabled = true;
   const tracks = [];
   for (const a of allAssets) for (let i=0;i<a.tracks.length;i++) if (a.tracks[i].playable) tracks.push({asset:a, track:a.tracks[i], idx:i});
+  let failed = 0;
   for (let i=0;i<tracks.length;i++) {
     btn.innerHTML = '<span class="spinner" style="width:12px;height:12px;border-width:2px"></span> '+(i+1)+'/'+tracks.length;
-    const t=tracks[i];
+    const t = tracks[i];
     const dlName = getDownloadName(t.asset);
-    if (fmt==='wav') {
-      try { await handleWavDl(btn, dlName, t.asset, t.track, t.idx); } catch(e) {}
-    } else {
-      // OGG: materialize and download as OGG where possible, WAV otherwise
-      const blob = await materializeBlob(t.asset, t.track);
-      if (!blob) continue;
-      if (blob.type === 'audio/ogg') downloadBlob(dlName, blob, '.ogg', t.idx);
-      else downloadBlob(dlName, blob, '.wav', t.idx);
-    }
-    await new Promise(r=>setTimeout(r, 120));
+    try {
+      if (fmt === 'wav') {
+        await handleWavDl(null, dlName, t.asset, t.track, t.idx, { silent: true });
+      } else {
+        await handleOggDl(null, dlName, t.asset, t.track, t.idx, { silent: true });
+      }
+    } catch (e) { failed++; }
+    // Throttle slightly so browsers don't drop sequential downloads.
+    await new Promise(r => setTimeout(r, 250));
   }
-  btn.disabled=false; btn.innerHTML=orig;
+  btn.disabled = false; btn.innerHTML = orig;
+  if (failed) {
+    alert(failed + ' of ' + tracks.length + ' track(s) could not be converted. See console for details.');
+  }
 }
 
 // ============================================================
